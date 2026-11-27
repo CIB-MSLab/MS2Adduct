@@ -46,7 +46,8 @@ README) and can be downloaded with `scripts/download_data.sh`.
 
 `data/build_enveda_dataset.py` builds `data/splits_enveda/`. It covers 32 adduct
 types in the raw data; records outside the nine-class vocabulary are ignored at
-load time. `[M]+` is absent from this dataset.
+load time. `[M]+` is absent from this dataset. These splits are not part of the
+Zenodo deposit; build them locally if you want to rerun the secondary results.
 
 | Split | Records (all adduct types) |
 |---|---:|
@@ -72,8 +73,7 @@ deduplication, three adduct classes):
 | `cib-ms-dedup-train.pkl` | 3,812 | deduplicated against the Spectraverse training split |
 
 `build_cib_dataset.py` builds these pickles from the raw `.ms` files. The raw
-directory is archived as `cib_ms_raw_msdir.tar.gz` in the Zenodo deposit and is
-not stored in git.
+directory is not distributed; only the derived pickles are stored in git.
 
 ## Record format
 

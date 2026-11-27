@@ -24,15 +24,31 @@ Upload to the same Zenodo record:
 spectraverse_train.pkl   -> data/splits/train.pkl
 spectraverse_val.pkl     -> data/splits/val.pkl
 spectraverse_test.pkl    -> data/splits/test.pkl
-enveda_train.pkl         -> data/splits_enveda/train.pkl
-enveda_val.pkl           -> data/splits_enveda/val.pkl
-enveda_test.pkl          -> data/splits_enveda/test.pkl
-cib_ms_raw_msdir.tar.gz  -> data/cib-ms/MSDIR/
 ```
 
 The names on the left are the names to use in the Zenodo record; the arrows show
 where `scripts/download_data.sh` installs them. Checksums are in
-`SHA256SUMS_data` (paths relative to the repository root).
+`SHA256SUMS_data`.
+
+The Enveda-180 splits (`enveda_*.pkl`) and the raw in-house `.ms` archive
+(`cib_ms_raw_msdir.tar.gz`) are **not** part of the deposit; they are only used
+for the secondary / cross-dataset analyses and can be rebuilt locally with
+`data/build_enveda_dataset.py` and `data/cib-ms/build_cib_dataset.py`.
+
+## Code (`code/`)
+
+`MS2Adduct_code_<commit>.tar.gz` is created with
+
+```bash
+git archive --format=tar.gz --prefix=MS2Adduct-<commit>/ <commit> \
+  -o zenodo_staging/code/MS2Adduct_code_<commit>.tar.gz
+```
+
+## Upload
+
+`zenodo_upload.py` creates the record, uploads every file listed above and can
+publish it. See the module docstring for the exact commands; the access token
+is read from `ZENODO_TOKEN`.
 
 ## After creating the record
 
@@ -46,5 +62,4 @@ where `scripts/download_data.sh` installs them. Checksums are in
 |---|---:|
 | three checkpoints | 3 x 406 MB |
 | Spectraverse splits | 740 MB |
-| Enveda splits | 532 MB |
-| raw cib-ms archive | 1.6 MB |
+| code archive | 3.4 MB |

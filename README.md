@@ -73,13 +73,15 @@ The processed splits are hosted on Zenodo (link to be added):
 ZENODO_RECORD=<record-id> bash scripts/download_data.sh
 ```
 
-This fills `data/splits/` (Spectraverse, 392,513 / 50,235 / 46,049 spectra)
-and `data/splits_enveda/`. The splits are grouped by molecular structure with
-seed 42 (8:1:1); training seeds are a separate random source.
+This fills `data/splits/` (Spectraverse, 392,513 / 50,235 / 46,049 spectra).
+The splits are grouped by molecular structure with seed 42 (8:1:1); training
+seeds are a separate random source. They can also be rebuilt from the public
+source spectra; see [data/README.md](data/README.md).
 
-They can also be rebuilt from the public source spectra; see
-[data/README.md](data/README.md). `data/cib-ms/` contains our in-house QExactive
-external validation set (3,437 spectra, 3 adduct classes) and its build script.
+The Enveda-180 splits used for the cross-dataset analyses are not part of the
+deposit; rebuild them with `data/build_enveda_dataset.py`. `data/cib-ms/` holds
+our in-house QExactive external validation set (3,437 spectra, 3 adduct classes)
+and its build script.
 
 Each record is a dict with at least:
 

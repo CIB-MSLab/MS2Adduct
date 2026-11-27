@@ -5,8 +5,6 @@
 #
 # Expected files in the record (upload from zenodo_staging/data/):
 #   spectraverse_train.pkl, spectraverse_val.pkl, spectraverse_test.pkl
-#   enveda_train.pkl,       enveda_val.pkl,       enveda_test.pkl
-#   cib_ms_raw_msdir.tar.gz        (optional; raw QExactive .ms files)
 #   SHA256SUMS_data
 #
 # The splits are derived from public datasets by data/build_*.py and
@@ -33,8 +31,6 @@ curl -fL "$BASE/SHA256SUMS_data?download=1" -o "$TMP/SHA256SUMS"
 
 FILES=(
   spectraverse_train.pkl spectraverse_val.pkl spectraverse_test.pkl
-  enveda_train.pkl       enveda_val.pkl       enveda_test.pkl
-  cib_ms_raw_msdir.tar.gz
 )
 for file in "${FILES[@]}"; do
   echo "[data] downloading $file"
@@ -43,13 +39,9 @@ done
 
 ( cd "$TMP" && sha256sum -c --ignore-missing SHA256SUMS )
 
-mkdir -p data/splits data/splits_enveda
+mkdir -p data/splits
 for split in train val test; do
   mv "$TMP/spectraverse_${split}.pkl" "data/splits/${split}.pkl"
-  mv "$TMP/enveda_${split}.pkl"       "data/splits_enveda/${split}.pkl"
 done
 
-if [[ -f "$TMP/cib_ms_raw_msdir.tar.gz" ]]; then
-  tar -xzf "$TMP/cib_ms_raw_msdir.tar.gz" -C data/cib-ms
-fi
 echo "[data] done"

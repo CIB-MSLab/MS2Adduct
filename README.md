@@ -197,5 +197,6 @@ backbone.
 
 ## License
 
-License terms for this release have not been fixed yet; add a `LICENSE` file
-before publishing.
+Released under the [MIT License](LICENSE). The Spectraverse splits are
+redistributed under the terms of the original Spectraverse release; please cite
+that dataset alongside this repository.

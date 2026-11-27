@@ -43,8 +43,8 @@ git archive --format=tar.gz --prefix=MS2Adduct-<commit>/ <commit> \
   -o zenodo_staging/code/MS2Adduct_code_v1.0.0.tar.gz
 ```
 
-The current archive is built from commit `39ad7fc`; the record metadata carries
-`version: 1.0.0`.
+The archive is built from the release commit on `main`; the record metadata
+carries `version: 1.0.0`.
 
 ## Upload
 

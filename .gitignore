@@ -1,6 +1,36 @@
+# Weights (download from Zenodo)
+/ckpt/*/best_model.pth
+
+# Large data (download from Zenodo)
+/data/splits
+/data/splits_enveda
+/data/cib-ms/MSDIR/
+/data/dreams_cache/
+/data/*.mgf
+/data/*.pkl
+/data/*.csv
+/data/*.json
+
+# Pretrained dreaMS checkpoint
+/dreaMS/*.ckpt
+/dreaMS/dreams/
+/dreaMS/msml/
+
+# Local staging area for the Zenodo upload
+/zenodo_staging/*
+!/zenodo_staging/README.md
+
+# Evaluation outputs
+/results/
+*.csv
+
+# Python
 __pycache__/
 *.py[cod]
 *.egg-info/
 .ipynb_checkpoints/
+
+# Editors / OS
+.idea/
+.vscode/
 .DS_Store
-Thumbs.db

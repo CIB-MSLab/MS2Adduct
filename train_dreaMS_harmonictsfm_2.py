@@ -2,8 +2,8 @@
 train_dreaMS_harmonictsfm_2.py
 DreaMSHT2 = 忠实复现 dreaMS 原型的 dreaMS 分支 + δ-Transformer 编码 + 可搜索融合 → Adduct 分类 (9类)。
 
-与 train_dreaMS_harmonictsfm.py 的唯一区别是所建的模型 (DreaMSAdductHarmonicTsfmClassifierV2,
-见 model_dreaMS_harmonictsfm_2.py): dreaMS 谱图编码器改为与 ssl_model.ckpt 预训练配置一致。
+模型是 DreaMSAdductHarmonicTsfmClassifierV2 (见 model_dreaMS_harmonictsfm_2.py):
+dreaMS 谱图编码器与 ssl_model.ckpt 预训练配置一致。
 默认即"完全一致", 由 config 的 DREAMS2_* 开关控制, 也可用下面的 CLI 覆盖做消融:
   --heads 8|16      注意力头数 (8 = 预训练配置, 也允许 16 以复现旧行为)
   --gd 0|1          是否加回 graphormer 成对 m/z 差 attention bias
@@ -29,11 +29,10 @@ import config
 import model_dreaMS_harmonictsfm_2 as M2
 from model_dreaMS_harmonictsfm_2 import DreaMSAdductHarmonicTsfmClassifierV2
 from dataloader import get_dataloader
-# 复用 train_dreaMS_harmonic 里的训练/验证/评估循环与 FocalLoss/ION_CE
-from train_dreaMS_harmonic import (
+# 训练/验证/评估循环与 FocalLoss/ION_CE
+from train_utils import (
     AverageMeter, FocalLoss, ION_CE, _hierarchical,
     train_one_epoch_live, validate_live, test_evaluation_live,
-    EmbeddingDataset,
 )
 
 
@@ -51,11 +50,10 @@ def make_next_record_dir(base_dir, prefix):
 
 
 def backup_project_files(dest_dir):
-    files = ["config.py", "model_dreaMS.py", "model_dreaMS_harmonic.py",
+    files = ["config.py", "model_dreaMS.py",
              "model_dreaMS_harmonictsfm.py", "model_dreaMS_harmonictsfm_2.py",
-             "train_dreaMS_harmonic.py", "train_dreaMS_harmonictsfm.py",
-             "train_dreaMS_harmonictsfm_2.py", "verify_dreaMS_fidelity.py",
-             "dataloader.py", "model.py", "fusion.py", "layers.py"]
+             "train_utils.py", "train_dreaMS_harmonictsfm_2.py",
+             "dataloader.py", "model.py", "fusion.py"]
     backup_path = os.path.join(dest_dir, "codes")
     os.makedirs(backup_path, exist_ok=True)
     for f in files:
@@ -87,8 +85,8 @@ def main():
     parser.add_argument('--bases', type=str, default=None,
                         choices=list(config.HARMONIC_BASE_SETS.keys()),
                         help='不给则沿用 config.HARMONIC_BASES (config 为唯一真源)')
-    parser.add_argument('--seed', type=int, default=0,
-                        help='训练随机种子, 默认 0 (固定以保证可复现); 多 seed 实验显式传 1/2/3. '
+    parser.add_argument('--seed', type=int, default=1,
+                        help='训练随机种子, 默认 1 (固定以保证可复现); 多 seed 实验显式传 1/2/3. '
                              '注意: 数据划分固定用 42 (data/split_by_smiles.py), 与本种子是独立的两套')
     parser.add_argument('--select', type=str, default='loss_acc',
                         choices=['loss_acc', 'f1'],
@@ -253,7 +251,7 @@ def main():
         ckpt = os.path.join(config.DREAMS_CKPT_DIR, "ssl_model.ckpt")
         if mode == 'scratch':
             # 真正的从头训练: 不加载预训练权重。
-            # 注意原脚本 (train_dreaMS_harmonictsfm.py) 的 else 分支永远传 ckpt 且
+            # 注意旧版训练入口的 else 分支永远传 ckpt 且
             # freeze = (mode != 'finetune'), 所以那边的 'scratch' 实际是"冻结预训练
             # backbone", 并非随机初始化 —— 这里修正为 ckpt=None + 全部可训练。
             ckpt, freeze = None, False

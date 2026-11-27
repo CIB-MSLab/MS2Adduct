@@ -84,7 +84,7 @@ WARMUP_EPOCHS = 5
 LR_GAMMA = 0.98
 EARLY_STOP_PATIENCE = 5
 
-# === Focal Loss (train_dreaMS_harmonic.py) ===
+# === Focal Loss (train_utils.py) ===
 USE_FOCAL = True              # 用 class-balanced focal loss 代替 CE (救稀有类)
 FOCAL_GAMMA = 2.0
 
@@ -131,10 +131,10 @@ DREAMS2_FOURIER_STRAT = "lin_float_int"   # 与 ckpt 一致; 只影响 scratch �
 DREAMS2_MAX_PEAKS = None        # None = 沿用 config.MAX_PEAKS(100); 60 = 预训练值(须同时开 gd)
 DREAMS2_DROPOUT = None          # None = 沿用 backbone 默认 0.0; 0.1 = 预训练值
 
-# === 中性丢失 Harmonic 编码 (model_dreaMS_harmonic.py) ===
+# === 中性丢失 Harmonic 编码 (model_dreaMS_harmonictsfm.py) ===
 HARMONIC_EMB_DIM = MS_PE_DIM      # harmonic 投影输出维度 (与谱图特征对齐, concat 后 = 2*MS_PE_DIM)
 N_HARMONICS_PER_BASE = 3          # 每个基频的谐波阶数
-HARMONIC_CE_GATE = False          # 是否把 CE 门控同样作用到 harmonic 特征上 (实测 False 更优, 见 docs/2026-09-02-dreams-harmonic.md)
+HARMONIC_CE_GATE = False          # 是否把 CE 门控同样作用到 harmonic 特征上 (实测 False 更优)
 
 # === δ 分支 Transformer 编码 + 融合 (model_dreaMS_harmonictsfm.py) ===
 HSFM_DIM = 256                    # δ transformer token 维度 (= 输出维度)
@@ -152,7 +152,7 @@ FUSION = "tri_xattn"              # δ 分支与 DreaMS 特征融合。
                                   # 可选: concat/hadamard/gated/ffn/gated_cat/bilinear/film/coattn/tri_cat/tri_attn/tri_xattn
 # ════════════════════════════════════════════════════════════════════
 # 中性丢失基频表 (Da, 精确单同位素质量)
-#   训练脚本用 --bases {orig,adduct,chem,both} 选择, 见 train_dreaMS_harmonictsfm.py
+#   训练脚本用 --bases {orig,adduct,chem,both} 选择, 见 train_dreaMS_harmonictsfm_2.py
 #   ORIG   = 35 个化学中性丢失 (原表, 与 MSEcoding 一致)
 #   ADDUCT = 26 个加合物位移差值 (9 类加合物位移的全两两 |Δ|≥1 Da, 去掉与 ORIG/CHEM 退化者)
 #   CHEM   = 36 个数据驱动补充: 训练集池化 δ 直方图高频峰 ∩ 分子式穷举 <15 ppm 匹配 ∩ 不在 ORIG
@@ -251,7 +251,7 @@ HARMONIC_BASES = "adduct"         # 当前基频表 (训练脚本 --bases 覆盖
 #   3/3 seed 完全分离 (精确置换检验 p=1/20=0.050)。增益主要来自 [M]+ F1 0.280→0.354,
 #   机制是「δ=完整加合物质量」标记了「峰丢了整个加合物」。
 #   "chem"(36 个高频中性丢失) 实测无效 (-0.0006), 且会稀释 [M]+ 增益, 故不并入。
-#   详见 docs/2026-09-20-neutral-loss-bases.md 与 memory: ms2adduct-bases-extension-experiment
+#   详见 memory: ms2adduct-bases-extension-experiment
 HARMONIC_BASE_FREQUENCIES = HARMONIC_BASE_SETS[HARMONIC_BASES]
 
 # ── 峰间差分中性丢失边偏置 (2026-10-18, 默认关) ──
@@ -329,7 +329,7 @@ IDX_TO_ADDUCT = {v: k for k, v in ADDUCT_TO_IDX.items()}
 #   POLARITY_MASK_OUTPUT : 用给定极性把九类 logits 里反极性的 4/5 类置 -inf
 #                          (既然已知, 就不该再让它参与 argmax 竞争)
 # ════════════════════════════════════════════════════════════════════
-# ★ 2026-10-18 定案 (12 臂 × 3 seeds, 见 docs/2026-10-16-polarity-as-known-input.md §7.5):
+# ★ 2026-10-18 定案 (12 臂 × 3 seeds):
 #   采用方案 A —— 极性**不编码进网络**, 只在推理期作为输出约束。
 #   test 0.8748 / Macro F1 0.7735 (盲协议基线 0.8467 / 0.7556)。
 #   训练与原来的 control 臂逐位一致, 因此**不需要重训**: 已有的
@@ -338,7 +338,7 @@ POLARITY_AS_INPUT = False
 POLARITY_MASK_OUTPUT = True
 POLARITY_EMB_DIM = 8            # 极性嵌入维度 (2 类, 8 维足够)
 # 训练期屏蔽的预热轮数: 第 < N 轮不加屏蔽, 之后再加。0 = 从第 1 轮就屏蔽 (即 pol_full 的做法)。
-# 为什么需要它 (2026-10-17 诊断, 见 docs/2026-10-16-polarity-as-known-input.md §5.2):
+# 为什么需要它 (2026-10-17 诊断):
 #   一旦屏蔽, 反极性 logits 的 softmax 概率恒为 0 ⇒ **梯度恒为 0**, 极性嵌入唯一有效的
 #   学习信号 ("把反极性压下去") 从第一步就不存在, 只剩经门控的弱调制。实测 pol_full
 #   (全程屏蔽) 0.8633, 反而低于只加输入的 pol_input 0.8724。预热让九类自由竞争先把

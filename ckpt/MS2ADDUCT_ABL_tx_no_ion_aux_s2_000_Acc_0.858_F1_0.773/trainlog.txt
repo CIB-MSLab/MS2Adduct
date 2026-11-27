@@ -1,0 +1,72 @@
+======================================================================
+data=spectraverse | train=data/splits/train.pkl | val=data/splits/val.pkl | test=data/splits/test.pkl
+bases=adduct | n_bases=61 | n_harmonics=3 | seed=2 | select=f1 | patience=5
+fusion=tri_xattn | ce=cat | ce_token=True | hsfm_dim=256 | hsfm_layers=2 | hsfm_heads=4 | ce_bins=64 | batch=26 | lr=1e-05 | data_fraction=1.0
+DREAMS2: mode=finetune | n_heads=8 | graphormer=False | fourier_strategy=lin_float_int | max_peaks=100 (DREAMS2_MAX_PEAKS=None) | dropout=0.0 | gd_exact=False
+polarity_input=False | polarity_mask=False | polarity_mask_start=0 | polarity_emb_dim=8 | ion_aux=False | pairdiff_enabled=False | pairdiff_base_set=both | pairdiff_harmonics=1 | pairdiff_min_delta=1.0 | pairdiff_sham=False
+delta_encoder=fourier | delta_fourier_strategy=lin_float_int | delta_fourier_num_freqs=5998 | delta_token_mode=peak | init_from=None
+HARMONIC_BASE_FREQUENCIES = [
+    14.015650, 15.023475, 15.994915, 17.002740, 17.026549, 18.010565,
+    20.006228, 26.015650, 27.010899, 27.994915, 28.006148, 28.031300,
+    29.002740, 30.010565, 31.018390, 31.989830, 33.987721, 35.976678,
+    42.010565, 43.005814, 43.989830, 44.013640, 45.992904, 46.005480,
+    46.041865, 56.026215, 56.062600, 59.013305, 60.021130, 60.057515,
+    79.956816, 79.966332, 97.976896, 162.052824, 176.032089, 1.007280,
+    3.993760, 4.955390, 6.034500, 10.028250, 11.980180, 15.973940,
+    16.935580, 18.033820, 19.041100, 20.050150, 20.929330, 21.981940,
+    22.008440, 22.989220, 23.996490, 24.043900, 26.963830, 33.962120,
+    34.969400, 37.955880, 38.963160, 39.970430, 40.979480, 44.997650,
+    58.006030,
+]
+======================================================================
+Epoch   1/100 | LR: 0.000004 | Train Loss: 0.0947 Acc: 0.7212 | Val Loss: 0.0628 Acc: 0.7684 F1: 0.7249
+Epoch   2/100 | LR: 0.000006 | Train Loss: 0.0388 Acc: 0.8809 | Val Loss: 0.0640 Acc: 0.8274 F1: 0.7690
+Epoch   3/100 | LR: 0.000008 | Train Loss: 0.0240 Acc: 0.9315 | Val Loss: 0.0818 Acc: 0.8406 F1: 0.7694
+Epoch   4/100 | LR: 0.000010 | Train Loss: 0.0176 Acc: 0.9480 | Val Loss: 0.0889 Acc: 0.8345 F1: 0.7548
+Epoch   5/100 | LR: 0.000010 | Train Loss: 0.0147 Acc: 0.9559 | Val Loss: 0.0902 Acc: 0.8294 F1: 0.7692
+Epoch   6/100 | LR: 0.000010 | Train Loss: 0.0103 Acc: 0.9650 | Val Loss: 0.1188 Acc: 0.8307 F1: 0.7729
+Epoch   7/100 | LR: 0.000010 | Train Loss: 0.0077 Acc: 0.9724 | Val Loss: 0.1139 Acc: 0.8301 F1: 0.7507
+Epoch   8/100 | LR: 0.000009 | Train Loss: 0.0057 Acc: 0.9778 | Val Loss: 0.1264 Acc: 0.8386 F1: 0.7710
+Epoch   9/100 | LR: 0.000009 | Train Loss: 0.0048 Acc: 0.9813 | Val Loss: 0.1346 Acc: 0.8323 F1: 0.7580
+Epoch  10/100 | LR: 0.000009 | Train Loss: 0.0042 Acc: 0.9838 | Val Loss: 0.1349 Acc: 0.8408 F1: 0.7794
+Epoch  11/100 | LR: 0.000009 | Train Loss: 0.0037 Acc: 0.9862 | Val Loss: 0.1494 Acc: 0.8394 F1: 0.7675
+Epoch  12/100 | LR: 0.000009 | Train Loss: 0.0034 Acc: 0.9879 | Val Loss: 0.1272 Acc: 0.8457 F1: 0.7821
+Epoch  13/100 | LR: 0.000009 | Train Loss: 0.0027 Acc: 0.9892 | Val Loss: 0.1363 Acc: 0.8373 F1: 0.7722
+Epoch  14/100 | LR: 0.000008 | Train Loss: 0.0022 Acc: 0.9905 | Val Loss: 0.1701 Acc: 0.8410 F1: 0.7652
+Epoch  15/100 | LR: 0.000008 | Train Loss: 0.0023 Acc: 0.9911 | Val Loss: 0.1756 Acc: 0.8318 F1: 0.7700
+Epoch  16/100 | LR: 0.000008 | Train Loss: 0.0022 Acc: 0.9921 | Val Loss: 0.1350 Acc: 0.8317 F1: 0.7715
+Epoch  17/100 | LR: 0.000008 | Train Loss: 0.0020 Acc: 0.9929 | Val Loss: 0.1589 Acc: 0.8371 F1: 0.7713
+============================================================
+Test Evaluation
+============================================================
+Test Loss:         0.1622
+Test Accuracy:     0.8583
+Test Macro F1:     0.7729
+Test Top-3 Acc:    0.9904
+
+Per-class F1:
+  [M+H]+              : F1=0.8853 (n=22482)
+  [M-H]-              : F1=0.9203 (n=10345)
+  [M+Na]+             : F1=0.6603 (n=6066)
+  [M+NH4]+            : F1=0.9190 (n=3164)
+  [M+HCOOH-H]-        : F1=0.9145 (n=1519)
+  [M+K]+              : F1=0.6652 (n=871)
+  [M+CH3COOH-H]-      : F1=0.9614 (n=754)
+  [M+Cl]-             : F1=0.7347 (n=567)
+  [M]+                : F1=0.2954 (n=281)
+
+Confusion Matrix:
+           [M+H]+  [M-H]-  [M+Na]  [M+NH4  [M+HCO  [M+K]+  [M+CH3  [M+Cl]    [M]+
+  [M+H]+    20214     220    1670     118      10      98       4      16     132
+  [M-H]-      710    9253     179       6      70       4      31      88       4
+ [M+Na]+     1693      97    4021      30       7     201       0       9       8
+[M+NH4]+      247       3      39    2841       0      30       0       4       0
+[M+HCOOH-H]-       22      85       9       1    1380       0       5      17       0
+  [M+K]+       76       6     166      22       1     600       0       0       0
+[M+CH3COOH-H]-        1       4      12       0       2       0     735       0       0
+ [M+Cl]-       25      90      14       0      29       0       0     407       2
+    [M]+      196       6       4       1       0       0       0       0      74
+============================================================
+
+[ABLATION] arm=tx_no_ion_aux seed=2 hook=None
+[ABLATION] 最终架构: 移除离子模式辅助头 (2类), 即去掉 0.3×离子 CE | 单变量: ion_mode_head=None, 训练循环的 _hierarchical() 返回 False; positive/negative 头保留. 对照 = tri_xattn 控制臂

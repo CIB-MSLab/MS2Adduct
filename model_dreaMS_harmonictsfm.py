@@ -2,7 +2,7 @@
 model_dreaMS_harmonictsfm.py
 DreaMS MS/MS encoder + δ(中性丢失) 分支用 **Transformer** 编码 + 可搜索的融合方式。
 
-与 model_dreaMS_harmonic.py (δ 走 MLP + mean-pool) 的区别:
+与早期 δ-MLP 实现 (δ 走 MLP + mean-pool) 的区别:
   - δ 分支: 逐峰 raw 谐波特征(210) → 小 Transformer(自注意力跨峰建模中性丢失共现) → [CLS] 256
   - 融合: config.FUSION ∈ {concat, hadamard, gated, ffn} 自动枚举选优
     concat    [d; h]                      (2*dim, 基线同 harmonic-MLP)

@@ -1,5 +1,7 @@
 # MS2ADDUCT
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24587551.svg)](https://doi.org/10.5281/zenodo.24587551)
+
 Adduct-ion type identification from MS2 spectra: given a tandem mass spectrum,
 its precursor m/z, collision energy and acquisition ion mode, predict which of
 nine adduct ions produced the observed precursor.
@@ -11,6 +13,33 @@ collision-energy representations.
 > This repository is a cleaned release of the code used for the manuscript.
 > Ablation experiments and traditional-ML baseline comparisons are intentionally
 > not included.
+
+## Data and model weights
+
+The Python code, the three trained checkpoints and the Spectraverse splits are
+all in the Zenodo record **[10.5281/zenodo.24587551](https://doi.org/10.5281/zenodo.24587551)**
+(record id `24587551`, version 1.0.0, MIT licence):
+
+| Artefact | Zenodo file | Installed as | Size |
+|---|---|---:|---:|
+| Checkpoint, seed 1 | `tx_no_ion_aux_s1.pth` | `ckpt/MS2ADDUCT_ABL_tx_no_ion_aux_s1_000_Acc_0.854_F1_0.773/best_model.pth` | 387 MB |
+| Checkpoint, seed 2 | `tx_no_ion_aux_s2.pth` | `ckpt/MS2ADDUCT_ABL_tx_no_ion_aux_s2_000_Acc_0.858_F1_0.773/best_model.pth` | 387 MB |
+| Checkpoint, seed 3 | `tx_no_ion_aux_s3.pth` | `ckpt/MS2ADDUCT_ABL_tx_no_ion_aux_s3_000_Acc_0.859_F1_0.781/best_model.pth` | 387 MB |
+| Spectraverse splits | `spectraverse_{train,val,test}.pkl` | `data/splits/{train,val,test}.pkl` | 740 MB |
+| Source code snapshot | `MS2Adduct_code_v1.0.0.tar.gz` | - (same as this repository) | 62 KB |
+| Checksums | `SHA256SUMS_weights`, `SHA256SUMS_data` | used by the download scripts | 1 KB |
+
+Download and install everything with:
+
+```bash
+bash scripts/download_weights.sh    # -> ckpt/*/best_model.pth
+bash scripts/download_data.sh       # -> data/splits/*.pkl
+```
+
+Both scripts default to record `24587551` and verify every file against the
+published SHA-256 sums. The dreaMS pretrained backbone (`ssl_model.ckpt`,
+1.39 GB) is **not** in the record; fetch it from the official dreaMS release as
+described under [Pretrained dreaMS checkpoint](#pretrained-dreams-checkpoint).
 
 ## Model
 
@@ -67,10 +96,11 @@ pip install -r requirements.txt
 
 ## Data
 
-The processed splits are hosted on Zenodo (link to be added):
+The processed splits are published in the Zenodo record
+[10.5281/zenodo.24587551](https://doi.org/10.5281/zenodo.24587551):
 
 ```bash
-ZENODO_RECORD=<record-id> bash scripts/download_data.sh
+bash scripts/download_data.sh
 ```
 
 This fills `data/splits/` (Spectraverse, 392,513 / 50,235 / 46,049 spectra).
@@ -105,10 +135,10 @@ which is **not** the reported configuration.
 ## Model weights
 
 The three released checkpoints (one per training seed, about 400 MB each) are
-hosted on Zenodo (link to be added):
+published in the same Zenodo record:
 
 ```bash
-ZENODO_RECORD=<record-id> bash scripts/download_weights.sh
+bash scripts/download_weights.sh
 ```
 
 They are extracted into `ckpt/<run>/best_model.pth` using the original run

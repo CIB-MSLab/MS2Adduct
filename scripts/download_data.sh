@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Download the processed data splits from the Zenodo deposit.
 #
-#   ZENODO_RECORD=1234567 bash scripts/download_data.sh
+# Record: https://doi.org/10.5281/zenodo.24587551 (id 24587551, v1.0.0)
+#
+#   bash scripts/download_data.sh
+#   ZENODO_RECORD=1234567 bash scripts/download_data.sh   # another version
 #
 # Expected files in the record (upload from zenodo_staging/data/):
 #   spectraverse_train.pkl, spectraverse_val.pkl, spectraverse_test.pkl
@@ -14,10 +17,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-RECORD="${ZENODO_RECORD:-}"
+RECORD="${ZENODO_RECORD:-24587551}"
 if [[ -z "$RECORD" ]]; then
-  echo "ZENODO_RECORD is not set."
-  echo "Usage: ZENODO_RECORD=<record-id> bash scripts/download_data.sh"
+  echo "ZENODO_RECORD is empty."
+  echo "Usage: bash scripts/download_data.sh"
   echo "Alternatively rebuild the splits with data/build_training_dataset.py"
   echo "and data/split_by_smiles.py (see data/README.md)."
   exit 1

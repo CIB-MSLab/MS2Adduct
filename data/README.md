@@ -18,8 +18,9 @@ Nine adduct classes, in label order:
 [M+H]+  [M-H]-  [M+Na]+  [M+NH4]+  [M+HCOOH-H]-  [M+K]+  [M+CH3COOH-H]-  [M+Cl]-  [M]+
 ```
 
-The processed splits are available from the Zenodo deposit (see the root
-README) and can be downloaded with `scripts/download_data.sh`.
+The processed splits are published in the Zenodo record
+[10.5281/zenodo.24587551](https://doi.org/10.5281/zenodo.24587551) and can be
+downloaded with `scripts/download_data.sh`.
 
 ### Rebuilding the splits
 

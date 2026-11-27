@@ -1,10 +1,12 @@
 # Released checkpoints
 
 The three final checkpoints are **not** stored in git (about 400 MB each).
-They are distributed through the Zenodo deposit and can be installed with:
+They are published in the Zenodo record
+[10.5281/zenodo.24587551](https://doi.org/10.5281/zenodo.24587551) and can be
+installed with:
 
 ```bash
-ZENODO_RECORD=<record-id> bash scripts/download_weights.sh
+bash scripts/download_weights.sh
 ```
 
 ## Files

@@ -36,12 +36,15 @@ the released code.
 
 ## Code (`code/`)
 
-`MS2Adduct_code_<commit>.tar.gz` is created with
+`MS2Adduct_code_v1.0.0.tar.gz` is created from the tagged release commit with
 
 ```bash
 git archive --format=tar.gz --prefix=MS2Adduct-<commit>/ <commit> \
-  -o zenodo_staging/code/MS2Adduct_code_<commit>.tar.gz
+  -o zenodo_staging/code/MS2Adduct_code_v1.0.0.tar.gz
 ```
+
+The current archive is built from commit `39ad7fc`; the record metadata carries
+`version: 1.0.0`.
 
 ## Upload
 

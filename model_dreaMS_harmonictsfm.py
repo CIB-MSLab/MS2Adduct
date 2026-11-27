@@ -1,14 +1,19 @@
 """
 model_dreaMS_harmonictsfm.py
-DreaMS MS/MS encoder + δ(中性丢失) 分支用 **Transformer** 编码 + 可搜索的融合方式。
+DreaMS MS/MS encoder + a delta (neutral-loss) branch encoded by a
+**Transformer** + searchable fusion.
 
-与早期 δ-MLP 实现 (δ 走 MLP + mean-pool) 的区别:
-  - δ 分支: 逐峰 raw 谐波特征(210) → 小 Transformer(自注意力跨峰建模中性丢失共现) → [CLS] 256
-  - 融合: config.FUSION ∈ {concat, hadamard, gated, ffn} 自动枚举选优
-    concat    [d; h]                      (2*dim, 基线同 harmonic-MLP)
-    hadamard  [d; h; d⊙h]                 (3*dim, 显式逐维交互)
-    gated     g=σ(W[d;h]);  g⊙d+(1-g)⊙h   (dim, 软路由)
-    ffn       d + h + FFN([d;h]) 后 LN     (dim, 非线性残差融合)
+Differences from the earlier delta-MLP implementation (delta through an MLP
+followed by mean pooling):
+  - delta branch: per-peak raw harmonic features (210) -> small Transformer
+    (self-attention across peaks models the co-occurrence of neutral losses)
+    -> [CLS] 256
+  - fusion: config.FUSION in {concat, hadamard, gated, ffn}, enumerated and
+    selected automatically
+    concat    [d; h]                        (2*dim, baseline same as harmonic-MLP)
+    hadamard  [d; h; d*h]                   (3*dim, explicit per-dimension interaction)
+    gated     g=sigmoid(W[d;h]); g*d+(1-g)*h  (dim, soft routing)
+    ffn       d + h + FFN([d;h]), then LN   (dim, non-linear residual fusion)
 """
 import math
 import random
@@ -28,10 +33,11 @@ from fusion import FusionBlock, CEAdapter
 
 
 def infer_delta_encoder(state_dict) -> str:
-    """从已训练权重判断节点 δ 分支的架构。
+    """Infer the architecture of the per-peak delta branch from trained weights.
 
-    有 `harmonic_enc.fourier_enc.b` 即 "fourier"; 否则 "bases"。
-    用于默认值切到 "fourier" 后, 旧 ckpt 的加载路径自动回到 bases 架构。
+    The presence of `harmonic_enc.fourier_enc.b` means "fourier"; otherwise
+    "bases". After the default moved to "fourier", this lets the loading path of
+    an old ckpt fall back to the bases architecture automatically.
     """
     return "fourier" if any("harmonic_enc.fourier_enc.b" in k for k in state_dict) else "bases"
 
@@ -41,8 +47,9 @@ def infer_delta_encoder(state_dict) -> str:
 # ════════════════════════════════════════════════════════════════════
 
 def raw_harmonic_components(delta, bases=None, n_harm=None):
-    """delta: (...,) 或 (B,N) 或 (B,N,N)
-    bases/n_harm 为 None 时沿用 config 全局量 (与旧行为逐位一致)。"""
+    """delta: (...,) or (B,N) or (B,N,N)
+    When bases/n_harm are None the config globals are used (bit-identical to the
+    previous behaviour)."""
     bases = config.HARMONIC_BASE_FREQUENCIES if bases is None else bases
     n_harm = getattr(config, 'N_HARMONICS_PER_BASE', 3) if n_harm is None else n_harm
     delta = delta.unsqueeze(-1)
@@ -56,7 +63,9 @@ def raw_harmonic_components(delta, bases=None, n_harm=None):
 
 
 def make_sham_bases(bases, seed=123):
-    """频率范围匹配的无化学含义基频: 每个真基频 ±0.5 Da 抖动, 保持 0.05 Da 间隔。"""
+    """Chemically meaningless base frequencies with a matched frequency range:
+    each true base frequency is jittered by +-0.5 Da while keeping a 0.05 Da
+    minimum separation."""
     rng = random.Random(seed)
     true = list(bases)
     out = []
@@ -70,7 +79,7 @@ def make_sham_bases(bases, seed=123):
             out.append(v)
             break
         else:
-            raise RuntimeError(f"无法为基频 {b} 找到 sham 值")
+            raise RuntimeError(f"base frequency {b}: could not find a sham value")
     return sorted(out)
 
 
@@ -80,8 +89,8 @@ def make_sham_bases(bases, seed=123):
 
 class HarmonicTsfmEncoder(nn.Module):
     """
-    逐峰 δ 谐波特征 → input_proj → 自注意力 Transformer → [CLS] 汇聚。
-    固定 fp32 计算 (AMP 安全)。
+    Per-peak delta harmonic features -> input_proj -> self-attention Transformer
+    -> [CLS] pooling. Computed in fp32 (AMP safe).
     """
 
     def __init__(self, dim_out: int = 256):
@@ -91,13 +100,13 @@ class HarmonicTsfmEncoder(nn.Module):
         self.delta_encoder_mode = getattr(config, 'DELTA_ENCODER', 'bases')
         if self.delta_encoder_mode not in ('bases', 'fourier'):
             raise ValueError(
-                "DELTA_ENCODER 只支持 'bases' 或 'fourier', "
-                f"收到 {self.delta_encoder_mode!r}")
+                "DELTA_ENCODER only supports 'bases' or 'fourier', "
+                f"got {self.delta_encoder_mode!r}")
         self.delta_token_mode = getattr(config, 'DELTA_TOKEN_MODE', 'peak')
         if self.delta_token_mode not in ('peak', 'pair', 'peak_top5'):
             raise ValueError(
-                "DELTA_TOKEN_MODE 只支持 'peak'/'pair'/'peak_top5', "
-                f"收到 {self.delta_token_mode!r}")
+                "DELTA_TOKEN_MODE only supports 'peak'/'pair'/'peak_top5', "
+                f"got {self.delta_token_mode!r}")
         self.anchor_k = int(getattr(config, 'DELTA_ANCHOR_K', 5))
         self.fourier_enc = None
         if self.delta_encoder_mode == 'fourier':
@@ -140,8 +149,9 @@ class HarmonicTsfmEncoder(nn.Module):
         self.use_pairdiff = bool(getattr(config, 'PAIRDIFF_ENABLED', False))
         if self.use_pairdiff and self.delta_token_mode == 'pair':
             raise ValueError(
-                "PAIRDIFF_ENABLED 与 DELTA_TOKEN_MODE='pair' 互斥: 峰对已经是 token 本身, "
-                "再加峰对 attention 边偏置属于重复编码")
+                "PAIRDIFF_ENABLED and DELTA_TOKEN_MODE='pair' are mutually exclusive: "
+                "the peak pairs already are the tokens, so adding a pairwise attention "
+                "edge bias would encode the same thing twice")
         self.pair_proj = None
         self.pair_bases = []
         self.pair_harm = 1
@@ -164,9 +174,10 @@ class HarmonicTsfmEncoder(nn.Module):
 
     def forward(self, delta: torch.Tensor, mask: torch.Tensor,
                 intensity: torch.Tensor = None) -> torch.Tensor:
-        """delta:(B,N) mask: valid peak mask(B,N) intensity:(B,N) → (B, dim_out) fp32
+        """delta:(B,N) mask: valid peak mask(B,N) intensity:(B,N) -> (B, dim_out) fp32
 
-        intensity 只在 DELTA_TOKEN_MODE='peak_top5' 时用于挑选锚点峰。
+        intensity is only used to pick the anchor peaks when
+        DELTA_TOKEN_MODE='peak_top5'.
         """
         from torch import autocast
         device_type = 'cuda' if delta.is_cuda else 'cpu'
@@ -205,11 +216,14 @@ class HarmonicTsfmEncoder(nn.Module):
         return h
 
     def _forward_pair(self, raw: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        """峰对 token: 每个有效峰对一个 token, 编码 |δ_i − δ_j|。
+        """Peak-pair tokens: one token per valid peak pair, encoding
+        |delta_i - delta_j|.
 
-        逐样本单独前向: 对数 C(k,2) 随样本峰数变化, padding 到批内最大对数
-        (最多 4,950) 会同时放大显存与无用的注意力计算。所有峰对都是有效
-        key, 因此不需要 padding mask。
+        Each sample is forwarded on its own: the number of pairs C(k,2) varies
+        with the peak count of the sample, and padding to the largest pair count
+        in the batch (up to 4,950) would inflate both memory use and wasted
+        attention computation. Every pair is a valid key, so no padding mask is
+        needed.
         """
         outs = []
         for b in range(raw.shape[0]):
@@ -230,20 +244,26 @@ class HarmonicTsfmEncoder(nn.Module):
 
     def _forward_anchor(self, raw: torch.Tensor, mask: torch.Tensor,
                         intensity: torch.Tensor) -> torch.Tensor:
-        """前体中性丢失 + 强度前 K 峰锚定的峰间中性丢失。
+        """Precursor neutral loss + inter-peak neutral losses anchored on the
+        top-K peaks by intensity.
 
-        token 集合 = 全部有效峰的 δ_i (与 'peak' 模式相同)
-                   + 对每个锚点峰 a 与每个 **m/z 小于 a** 的峰 j 的 |δ_a − δ_j|。
-        锚点按 intensity 取前 K 个有效峰 (K = DELTA_ANCHOR_K); 单向配对
-        (mz_j < mz_a ⇔ δ_j > δ_a), 因此 k=100 时峰间 token 最多约 K×k/2。
-        与 'pair' 相比只保留 K 个强峰向下的中性丢失, 而不是 C(k,2)=4,950。
+        Token set = delta_i of every valid peak (as in 'peak' mode)
+                   + |delta_a - delta_j| for every anchor peak a and every peak j
+                     with **m/z smaller than a**.
+        Anchors are the top-K valid peaks by intensity (K = DELTA_ANCHOR_K); the
+        pairing is one-directional (mz_j < mz_a <=> delta_j > delta_a), so at
+        k=100 there are at most about K*k/2 inter-peak tokens. Compared with
+        'pair', this keeps only the neutral losses descending from K strong peaks
+        instead of C(k,2)=4,950.
 
-        批内 padding 到最大 token 数后一次前向 (最多 596), 而不是逐样本循环:
-        逐样本会在 batch=26 时产生大量小 kernel, 实测 3.7× 于原峰模式。
+        Padded to the largest token count in the batch and forwarded in a single
+        pass (at most 596) rather than looping per sample: a per-sample loop
+        produces many small kernels at batch=26 and measured 3.7x the original
+        peak mode.
         """
         if intensity is None:
             raise ValueError(
-                "DELTA_TOKEN_MODE='peak_top5' 需要 intensity 来选择锚点峰")
+                "DELTA_TOKEN_MODE='peak_top5' requires intensity to select the anchor peaks")
         B, N = raw.shape
         device = raw.device
         vals_list, lens = [], []
@@ -288,7 +308,8 @@ class HarmonicTsfmEncoder(nn.Module):
 # ════════════════════════════════════════════════════════════════════
 
 class DreaMSAdductHarmonicTsfmClassifier(DreaMSAdductClassifier):
-    """接口与 DreaMSAdductHarmonicClassifier 一致; 仅 δ 编码方式与融合不同。"""
+    """Interface identical to DreaMSAdductHarmonicClassifier; only the delta
+    encoding and the fusion differ."""
 
     MASKED_LOGIT = -1e4
 
@@ -363,18 +384,24 @@ class DreaMSAdductHarmonicTsfmClassifier(DreaMSAdductClassifier):
         return torch.where(precursor_mz > 0, precursor_mz, mz.max(dim=-1)[0])
 
     def set_epoch(self, epoch):
-        """训练循环每轮调用一次; 只用于 POLARITY_MASK_START_EPOCH 的预热判断。"""
+        """Called once per epoch by the training loop; only used for the
+        POLARITY_MASK_START_EPOCH warm-up check."""
         self.current_epoch = int(epoch)
 
     def _apply_polarity_mask(self, logits, polarity):
-        """按**给定**的离子模式把九类 logits 里反极性的类屏蔽掉。
+        """Mask the opposite-polarity classes out of the nine-class logits using
+        the **given** ion mode.
 
-        注意这与"用**预测**出的极性去门控"完全不同 —— 后者实测零影响
-        (analyze_polarity.py: 1630 个跨极性错误里 96.3% 极性头自己也判错)。
-        这里用的是采集时已知的真值极性, 因此等价于该脚本里的 oracle 极性上界。
+        Note that this is entirely different from gating on the **predicted**
+        polarity, which measured as a zero effect (analyze_polarity.py: of the
+        1630 cross-polarity errors, the polarity head itself was wrong 96.3% of
+        the time). Here the true polarity known at acquisition time is used, so
+        this is equivalent to the oracle-polarity upper bound in that script.
 
-        训练期可延迟生效 (mask_start_epoch): 屏蔽会让反极性 logits 的梯度恒为 0,
-        预热期先让九类自由竞争, 避免掐掉极性输入唯一有效的学习信号。
+        During training the mask can start late (mask_start_epoch): masking
+        makes the gradient of the opposite-polarity logits permanently zero, so
+        the warm-up phase first lets the nine classes compete freely, avoiding
+        cutting off the only effective learning signal of the polarity input.
         """
         if polarity is None or not getattr(self, 'mask_output_by_polarity', False):
             return logits

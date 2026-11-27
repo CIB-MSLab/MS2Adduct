@@ -1,18 +1,24 @@
 """
 train_dreaMS_harmonictsfm_2.py
-DreaMSHT2 = 忠实复现 dreaMS 原型的 dreaMS 分支 + δ-Transformer 编码 + 可搜索融合 → Adduct 分类 (9类)。
+DreaMSHT2 = a dreaMS branch that faithfully reproduces the original dreaMS
+model + delta-Transformer encoding + searchable fusion -> 9-class adduct
+classification.
 
-模型是 DreaMSAdductHarmonicTsfmClassifierV2 (见 model_dreaMS_harmonictsfm_2.py):
-dreaMS 谱图编码器与 ssl_model.ckpt 预训练配置一致。
-默认即"完全一致", 由 config 的 DREAMS2_* 开关控制, 也可用下面的 CLI 覆盖做消融:
-  --heads 8|16      注意力头数 (8 = 预训练配置, 也允许 16 以复现旧行为)
-  --gd 0|1          是否加回 graphormer 成对 m/z 差 attention bias
-  --max_peaks N     None=沿用 config.MAX_PEAKS; 60=预训练值
-  --dropout P       None=沿用 backbone 默认 0.0; 0.1=预训练值
+The model is DreaMSAdductHarmonicTsfmClassifierV2 (see
+model_dreaMS_harmonictsfm_2.py): the dreaMS spectrum encoder matches the
+pretraining configuration of ssl_model.ckpt. The default is "fully consistent";
+the DREAMS2_* switches in config control it, and the CLI flags below override
+them for ablation:
+  --heads 8|16      attention heads (8 = pretraining configuration; 16 is also
+                    allowed to reproduce the older behaviour)
+  --gd 0|1          whether to add the graphormer pairwise m/z difference
+                    attention bias back
+  --max_peaks N     None = keep config.MAX_PEAKS; 60 = pretraining value
+  --dropout P       None = keep the backbone default 0.0; 0.1 = pretraining value
 
-数据集由 --data 切换 (默认 spectraverse):
-  --data spectraverse  data/splits/         9 类齐全, 主数据集
-自检 / 回归: verify_dreaMS_fidelity.py
+The dataset is selected with --data (default spectraverse):
+  --data spectraverse  data/splits/         all nine classes, the main dataset
+Self-check / regression: verify_dreaMS_fidelity.py
 """
 import os, shutil, argparse, random, numpy as np, torch, torch.nn as nn
 from torch.optim import AdamW
@@ -76,37 +82,39 @@ def main():
     parser.add_argument('--lr', type=float, default=None)
     parser.add_argument('--prefix', type=str, default="MS2ADDUCT_DreaMSHT2_")
     parser.add_argument('--init_from', type=str, default=None,
-                        help='从已有 best_model.pth 热启动 (strict 加载, 覆盖 dreaMS 预训练骨干); '
-                             '用于"在某个 ckpt 上只改一处输入"的单变量实验')
+                        help='warm start from an existing best_model.pth (strict load, overrides the '
+                             'dreaMS pretrained backbone); used for single-variable '
+                             'experiments that change one input relative to a given ckpt')
     parser.add_argument('--mode', type=str, default=None)
     parser.add_argument('--bases', type=str, default=None,
                         choices=list(config.HARMONIC_BASE_SETS.keys()),
-                        help='不给则沿用 config.HARMONIC_BASES (config 为唯一真源)')
+                        help='defaults to config.HARMONIC_BASES (config is the single source of truth)')
     parser.add_argument('--seed', type=int, default=1,
-                        help='训练随机种子, 默认 1 (固定以保证可复现); 多 seed 实验显式传 1/2/3. '
-                             '注意: 数据划分固定用 42 (data/split_by_smiles.py), 与本种子是独立的两套')
+                        help='training seed, default 1 (fixed for reproducibility); pass 1/2/3 '
+                             'explicitly for multi-seed runs. Note: the data split always uses '
+                             'seed 42 (data/split_by_smiles.py), which is independent of this seed')
     parser.add_argument('--select', type=str, default='loss_acc',
                         choices=['loss_acc', 'f1'],
-                        help='checkpoint 选择/早停判据: loss_acc=冠军原判据, f1=按 val Macro F1')
+                        help='checkpoint selection / early-stopping criterion: loss_acc = the original winning criterion, f1 = val macro F1')
     parser.add_argument('--data', type=str, default='spectraverse',
                         choices=list(config.DATA_SETS.keys()),
-                        help='数据集组合 (见 config.DATA_SETS): spectraverse=主数据集')
+                        help='dataset combination (see config.DATA_SETS): spectraverse = the main dataset')
     parser.add_argument('--heads', type=int, default=None, choices=[8, 16],
-                        help='注意力头数; 8 = ssl_model.ckpt 预训练配置 (默认), 16 = 旧移植版行为')
+                        help='attention heads; 8 = ssl_model.ckpt pretraining configuration (default), 16 = behaviour of the older port')
     parser.add_argument('--gd', type=int, default=None, choices=[0, 1],
-                        help='1 = 加回 graphormer 成对 m/z 差 attention bias (默认)')
+                        help='1 = add the graphormer pairwise m/z difference attention bias back (default)')
     parser.add_argument('--max_peaks', type=int, default=None,
-                        help='覆盖 config.MAX_PEAKS; 不给则沿用 config (100), 60 = 预训练值')
+                        help='override config.MAX_PEAKS; defaults to config (100), 60 = pretraining value')
     parser.add_argument('--dropout', type=float, default=None,
-                        help='覆盖 backbone dropout; 不给则沿用 backbone 默认 (0.0), 0.1 = 预训练值')
+                        help='override the backbone dropout; defaults to the backbone default (0.0), 0.1 = pretraining value')
     parser.add_argument('--hsfm_dim', type=int, default=None,
-                        help='δ transformer token 维度; 必须能被 --hsfm_heads 整除')
+                        help='delta transformer token dimension; must be divisible by --hsfm_heads')
     parser.add_argument('--hsfm_layers', type=int, default=None,
-                        help='δ transformer 层数')
+                        help='number of delta transformer layers')
     parser.add_argument('--hsfm_heads', type=int, default=None,
-                        help='δ transformer 头数; 必须整除 --hsfm_dim')
+                        help='number of delta transformer heads; must divide --hsfm_dim')
     parser.add_argument('--ce_bins', type=int, default=None,
-                        help='CE 分箱数 (CEAdapter 的 num_ce_bins)')
+                        help='number of CE bins (CEAdapter num_ce_bins)')
     args = parser.parse_args()
 
     if args.fusion is not None:
@@ -156,7 +164,7 @@ def main():
     if args.ce_bins is not None:
         config.CE_NUM_BINS = args.ce_bins
     assert config.HSFM_DIM % config.HSFM_HEADS == 0, \
-        f"HSFM_DIM({config.HSFM_DIM}) 必须能被 HSFM_HEADS({config.HSFM_HEADS}) 整除"
+        f"HSFM_DIM({config.HSFM_DIM}) must be divisible by HSFM_HEADS({config.HSFM_HEADS})"
 
     if args.seed is not None:
         random.seed(args.seed)
@@ -219,7 +227,7 @@ def main():
 
     mode = config.DREAMS_MODE
     if mode == "cache":
-        raise NotImplementedError("δ-Transformer 需要原始峰, 请用 DREAMS_MODE=finetune/scratch")
+        raise NotImplementedError("the delta-Transformer needs raw peaks; use DREAMS_MODE=finetune/scratch")
     else:
         train_loader = get_dataloader(config.TRAIN_PKL, config.BATCH_SIZE,
                                       augment=True, shuffle=True)
@@ -231,14 +239,14 @@ def main():
         ckpt = os.path.join(config.DREAMS_CKPT_DIR, "ssl_model.ckpt")
         if mode == 'scratch':
             ckpt, freeze = None, False
-        print(f"[mode] {mode} | ckpt={ckpt if ckpt else 'None (随机初始化)'} | "
+        print(f"[mode] {mode} | ckpt={ckpt if ckpt else 'None (random init)'} | "
               f"freeze_backbone={freeze}")
         model = DreaMSAdductHarmonicTsfmClassifierV2(
             ckpt_path=ckpt, freeze_backbone=freeze).to(device)
         if args.init_from:
             init_sd = torch.load(args.init_from, map_location=device)
             model.load_state_dict(init_sd)
-            print(f"[init] 热启动自 {args.init_from} (strict)")
+            print(f"[init] warm start from {args.init_from} (strict)")
         train_fn = train_one_epoch_live
         val_fn = validate_live
         test_fn = test_evaluation_live

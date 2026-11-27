@@ -1,11 +1,12 @@
 """
-按 SMILES 划分训练数据集为 train / val / test。
-同一 SMILES 的所有谱图必须分到同一集合，防止数据泄漏。
-随机种子 42。
+Split a training dataset into train / val / test by SMILES.
+All spectra sharing a SMILES must land in the same split to prevent leakage.
+Random seed 42.
 
-各数据集独立划分（各自用自己的 SMILES 列表洗牌），互不影响:
-  training_dataset.pkl    → splits/             spectraverse-1.0.1
-  MassSpecGym_adduct.pkl  → splits_MassSpecGym/
+Each dataset is split independently (each shuffles its own SMILES list), so the
+splits of one dataset never affect the others:
+  training_dataset.pkl    -> splits/             spectraverse-1.0.1
+  MassSpecGym_adduct.pkl  -> splits_MassSpecGym/
 """
 import json
 import pickle
@@ -25,7 +26,7 @@ DATASETS = [
 
 
 def load_dataset(path):
-    print(f"加载数据集: {path}")
+    print(f"Loading dataset: {path}")
     if path.endswith('.pkl'):
         with open(path, 'rb') as f:
             return pickle.load(f)
@@ -33,18 +34,18 @@ def load_dataset(path):
         with open(path, 'r', encoding='utf-8') as f:
             return json.load(f)
     else:
-        raise ValueError(f"不支持的文件格式: {path}")
+        raise ValueError(f"Unsupported file format: {path}")
 
 
 def split_by_smiles(records, train_ratio, val_ratio, test_ratio, seed):
-    """按 SMILES 分组后划分，保证同一 SMILES 不出现在多个集合中"""
+    """Group by SMILES before splitting so no SMILES spans two splits."""
     groups = defaultdict(list)
     for r in records:
         groups[r['smiles']].append(r)
 
     smiles_list = list(groups.keys())
-    print(f"总谱图数: {len(records)}")
-    print(f"唯一 SMILES: {len(smiles_list)}")
+    print(f"Total spectra: {len(records)}")
+    print(f"Unique SMILES: {len(smiles_list)}")
 
     random.seed(seed)
     random.shuffle(smiles_list)
@@ -61,10 +62,10 @@ def split_by_smiles(records, train_ratio, val_ratio, test_ratio, seed):
     val_records = [r for s in val_smiles for r in groups[s]]
     test_records = [r for s in test_smiles for r in groups[s]]
 
-    print(f"\n划分结果:")
-    print(f"  Train: {len(train_records)} 谱图 ({len(train_smiles)} SMILES)")
-    print(f"  Val:   {len(val_records)} 谱图 ({len(val_smiles)} SMILES)")
-    print(f"  Test:  {len(test_records)} 谱图 ({len(test_smiles)} SMILES)")
+    print(f"\nSplit sizes:")
+    print(f"  Train: {len(train_records)} spectra ({len(train_smiles)} SMILES)")
+    print(f"  Val:   {len(val_records)} spectra ({len(val_smiles)} SMILES)")
+    print(f"  Test:  {len(test_records)} spectra ({len(test_smiles)} SMILES)")
 
     return train_records, val_records, test_records
 
@@ -74,7 +75,7 @@ def save_splits(train, val, test, output_dir):
 
     for name, records in [('train', train), ('val', val), ('test', test)]:
         pkl_path = os.path.join(output_dir, f'{name}.pkl')
-        print(f"\n保存 {name} ({len(records)} 条)...")
+        print(f"\nSaving {name} ({len(records)} records)...")
         with open(pkl_path, 'wb') as f:
             pickle.dump(records, f, protocol=pickle.HIGHEST_PROTOCOL)
         print(f"  {pkl_path} ({os.path.getsize(pkl_path) / 1024 / 1024:.0f} MB)")
@@ -85,7 +86,7 @@ if __name__ == '__main__':
 
     for ds in DATASETS:
         print("=" * 60)
-        print(f"按 SMILES 划分: {ds['input']} (seed={SEED})")
+        print(f"Splitting by SMILES: {ds['input']} (seed={SEED})")
         print("=" * 60)
 
         records = load_dataset(ds['input'])
@@ -95,5 +96,5 @@ if __name__ == '__main__':
         print()
 
     print("=" * 60)
-    print("全部完成")
+    print("All done")
     print("=" * 60)

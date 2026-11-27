@@ -1,12 +1,13 @@
 """
 fusion.py
-DreaMS 谱图特征 d 与 δ 分支特征 h 的融合模块 (两编码器 MLP/Transformer 共用)。
+Fusion of the dreaMS spectrum features d with the delta-branch features h
+(shared by the MLP and the Transformer encoders).
 
-FUSION ∈ {concat, hadamard, gated, ffn}:
-  concat    [d; h]                      (2*dim)
-  hadamard  [d; h; d⊙h]                 (3*dim, 显式逐维交互)
-  gated     g=σ(W[d;h]);  g⊙d+(1-g)⊙h   (dim, 软路由)
-  ffn       d + h + FFN([d;h]) 后 LN     (dim, 非线性残差融合)
+FUSION in {concat, hadamard, gated, ffn}:
+  concat    [d; h]                        (2*dim)
+  hadamard  [d; h; d*h]                   (3*dim, explicit per-dimension interaction)
+  gated     g=sigmoid(W[d;h]); g*d+(1-g)*h  (dim, soft routing)
+  ffn       d + h + FFN([d;h]), then LN   (dim, non-linear residual fusion)
 """
 import math
 import torch
@@ -14,17 +15,21 @@ import torch.nn as nn
 
 
 class CEAdapter(nn.Module):
-    """碰撞能量(CE)的多种融合方式 (作用于 DreaMS 谱图特征 d)。
+    """Ways to inject collision energy (CE) into the dreaMS spectrum features d.
 
     mode:
-      gate  (默认, 原 EnergyGate):  sigmoid 门控向量逐维乘到 d
-      film  :  scale=1+tanh(...), shift=... → d' = scale⊙d + shift
-      cat   :  不调制 d; 投影出 CE 描述向量 aux, 由分类器 concat 到融合后特征
-      none  :  不使用 CE
+      gate  (default, the original EnergyGate): a sigmoid gate vector multiplies
+            d elementwise
+      film  :  scale=1+tanh(...), shift=... -> d' = scale*d + shift
+      cat   :  leaves d unmodulated; projects a CE descriptor vector aux that
+               the classifier concatenates onto the fused features
+      none  :  CE is not used
 
-    use_polarity: 把离子模式 (正/负) 的嵌入与 CE 嵌入**拼接后一起投影** ——
-      即"极性作为输入, 和 CE 一块送进来"。极性在采集时已知 (见 config 的说明),
-      因此这里不是多预测一个头, 而是给门控/描述向量多一路条件。
+    use_polarity: concatenates the ion-mode (positive/negative) embedding with
+      the CE embedding and projects them jointly, i.e. "polarity as an input,
+      fed in together with CE". The ion mode is known at acquisition time (see
+      the notes in config), so this adds a conditioning path to the gate or to
+      the descriptor vector rather than another prediction head.
     """
 
     def __init__(self, feat_dim: int, mode: str = 'gate',
@@ -66,14 +71,14 @@ class CEAdapter(nn.Module):
             return emb
         if polarity is None:
             raise ValueError(
-                "POLARITY_AS_INPUT=True 但前向没有收到 polarity —— "
-                "训练/评测循环必须把 batch['polarity'] 传进模型")
+                "POLARITY_AS_INPUT=True but the forward pass received no polarity; "
+                "the training/evaluation loop must pass batch['polarity'] into the model")
         emb = torch.cat([emb, self.polarity_embedding(polarity.long().view(-1))], dim=-1)
         return emb
 
     def apply(self, feat: torch.Tensor, energy: torch.Tensor,
               polarity: torch.Tensor = None):
-        """返回 (feat_mod, aux)。aux: (B, aux_dim), 非 cat 模式恒为 None。"""
+        """Return (feat_mod, aux). aux is (B, aux_dim), always None outside cat mode."""
         emb = self._embed(energy, polarity)
         if self.mode == 'none':
             return feat, None
@@ -168,7 +173,7 @@ class FusionBlock(nn.Module):
                 a, _ = self.mha(q, kv, kv)
                 return self.norm(d + a.squeeze(1))                # (B,dim)
             if aux is None:
-                raise ValueError(f"{self.fusion} 需要第三个输入 aux (CE 向量)")
+                raise ValueError(f"{self.fusion} requires a third input aux (the CE vector)")
             aux = aux.to(dtype=d.dtype)
             if self.fusion == 'tri_cat':
                 return torch.cat([d, h, aux], dim=-1)

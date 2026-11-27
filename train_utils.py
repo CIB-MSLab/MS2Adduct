@@ -53,10 +53,12 @@ def _hierarchical(model):
 
 
 def _polarity_kwargs(model, batch, device):
-    """离子模式 (正/负) 是采集时已知的输入, 不是预测目标 (见 config 的说明块)。
+    """The ion mode (positive/negative) is an input known at acquisition time,
+    not a prediction target (see the explanation block in config).
 
-    只有显式声明 `accepts_polarity` 的模型才收到它 —— 其余模型的前向签名不含
-    polarity, 保持逐行不变。
+    Only models that explicitly declare `accepts_polarity` receive it; every
+    other model has no polarity argument in its forward signature and is called
+    exactly as before.
     """
     if not getattr(model, 'accepts_polarity', False):
         return {}

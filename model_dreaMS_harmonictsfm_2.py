@@ -1,23 +1,34 @@
 """
 model_dreaMS_harmonictsfm_2.py
-DreaMSHT2 = 与 dreaMS 原型完全一致的 dreaMS 分支 + δ-Transformer 编码 + 融合 → 9 类加合物。
+DreaMSHT2 = a dreaMS branch fully consistent with the original dreaMS model
++ delta-Transformer encoding + fusion -> 9 adduct classes.
 
-与 model_dreaMS_harmonictsfm.py 的唯一区别在 dreaMS 谱图编码器, 由 config 的
-DREAMS2_* 开关控制 (默认即"完全一致"):
+The only difference from model_dreaMS_harmonictsfm.py is the dreaMS spectrum
+encoder, controlled by the DREAMS2_* switches in config (default: "fully
+consistent"):
 
-  DREAMS2_N_HEADS = 8        ssl_model.ckpt 是按 n_heads=8 预训练的。原移植版用 16,
-                             而 qkv 权重形状 (4096,1024) 与头数无关, load_state_dict
-                             (strict=False) 静默通过 —— head_dim 悄悄变成 64 而非 128。
-  DREAMS2_GRAPHORMER = False 成对 m/z 差 attention bias: 预训练启用, 移植版丢掉。
-                             **实测在 100 峰 padding 下有害、在预训练的 60 峰下有益**
-                             (两个独立指标交互项 t≈3.2), 故默认关; 详见 config.py 的结论块。
-  DREAMS2_FOURIER_STRAT      与 ckpt 一致的频率构造方式 (只影响 scratch 初始化)。
+  DREAMS2_N_HEADS = 8        ssl_model.ckpt was pretrained with n_heads=8. The
+                             original port used 16, and because the qkv weight
+                             shape (4096,1024) does not depend on the number of
+                             heads, load_state_dict(strict=False) accepted it
+                             silently: head_dim quietly became 64 instead of 128.
+  DREAMS2_GRAPHORMER = False pairwise m/z difference attention bias: enabled
+                             during pretraining, dropped by the port. **Measured
+                             to hurt at 100-peak padding and to help at the
+                             pretrained 60 peaks** (interaction term t ~ 3.2 on
+                             two independent metrics), hence off by default; see
+                             the conclusion block in config.py.
+  DREAMS2_FOURIER_STRAT      frequency construction matching the ckpt (only
+                             affects scratch initialisation).
 
-实现策略: 全部继承既有实现, 只覆盖真正需要改的方法。δ 分支 / CE adapter / FusionBlock /
-分层头 / _prepare_spec / _load_weights 均原样复用 —— 本修复不引入任何新参数, 因此
-backbone 的状态字典键与 V1 完全相同 (65 个), 权重加载路径无需改动。
+Implementation strategy: inherit the existing implementation wholesale and
+override only the methods that really need to change. The delta branch / CE
+adapter / FusionBlock / hierarchical head / _prepare_spec / _load_weights are
+reused verbatim. This fix adds no new parameters, so the backbone state-dict
+keys are identical to V1 (65 keys) and the weight-loading path needs no change.
 
-自检 / 回归: verify_dreaMS_fidelity.py (含与 ckpt 记录值的逐项对账)
+Self-check / regression: verify_dreaMS_fidelity.py (including an item-by-item
+reconciliation with the values recorded in the ckpt)
 """
 import os
 import torch
@@ -36,12 +47,14 @@ GD_EXACT = False
 
 
 def pairwise_mz_diff(fourier_features):
-    """graphormer 距离张量, 末维留给 attention 内部的 .sum(-1) (对应 layers.py:94)。
+    """graphormer distance tensor; the last dimension is left to the .sum(-1)
+    inside attention (see layers.py:94).
 
-    原版 (dreams.py):
+    Upstream (dreams.py):
         graphormer_dists = fourier_features.unsqueeze(2) - fourier_features.unsqueeze(1)
-    注意 d_fourier 分支下传入的是 ff_fourier 的输出, 即 980 维投影后的特征差,
-    不是原始 m/z 差。
+    Note that under the d_fourier branch the argument is the output of ff_fourier,
+    i.e. the difference of the 980-dim projected features, not the raw m/z
+    difference.
     """
     if GD_EXACT:
         return fourier_features.unsqueeze(2) - fourier_features.unsqueeze(1)  # (B,N,N,d_fourier)
@@ -50,7 +63,8 @@ def pairwise_mz_diff(fourier_features):
 
 
 class MultiheadAttentionFid(MultiheadAttention):
-    """加回 graphormer bias; 其余逐行与 model_dreaMS.MultiheadAttention 一致。"""
+    """Adds the graphormer bias back; otherwise line-for-line identical to
+    model_dreaMS.MultiheadAttention."""
 
     def forward(self, q, k, v, mask, graphormer_dists=None, do_proj_qkv=True):
         bs, n, d = q.size()
@@ -80,16 +94,19 @@ class MultiheadAttentionFid(MultiheadAttention):
 
 
 class TransformerEncoderFid(TransformerEncoder):
-    """与父类逐行一致, 区别有二:
+    """Line-for-line identical to the parent class except for two points:
 
-      (1) __init__ 必须重建 atts 为 MultiheadAttentionFid。父类的 __init__ 构造的是
-          **普通 MultiheadAttention**, 其 forward 忽略 graphormer_dists —— 只看 forward
-          会以为已经支持, 实际 gd 被每层静默丢弃 (verify_dreaMS_fidelity.py 第 [7] 项
-          就是靠这一点抓出问题的: 输出等价于"关了 gd")。
-      (2) forward 把 graphormer_dists 透传给每层。
+      (1) __init__ must rebuild atts as MultiheadAttentionFid. The parent's
+          __init__ builds a plain **MultiheadAttention** whose forward ignores
+          graphormer_dists: reading forward alone suggests gd is supported, but
+          every layer silently drops it (this is exactly what catches it in
+          check [7] of verify_dreaMS_fidelity.py, where the output is equivalent
+          to "gd switched off").
+      (2) forward passes graphormer_dists through to every layer.
 
-    参数名与父类完全相同 (MultiheadAttentionFid 继承自 MultiheadAttention), 所以
-    状态字典键不变, _load_weights 的 65 键过滤无需改动。
+    The parameter names are identical to the parent class (MultiheadAttentionFid
+    subclasses MultiheadAttention), so the state-dict keys are unchanged and the
+    65-key filter in _load_weights needs no modification.
     """
 
     def __init__(self, d_model=1024, n_heads=16, n_layers=7, use_layernorm=True,
@@ -129,7 +146,8 @@ class TransformerEncoderFid(TransformerEncoder):
 
 
 class DreaMSBackboneFid(DreaMSBackbone):
-    """默认取 ckpt 的预训练配置, 并把 encoder 换成会传递 graphormer_dists 的版本。"""
+    """Defaults to the ckpt pretraining configuration and swaps in an encoder
+    that passes graphormer_dists through."""
 
     def __init__(self, d_fourier=980, d_peak=44, d_mz_token=0, d_model=1024,
                  n_heads=None, n_layers=7, charge_feature=False,
@@ -172,7 +190,8 @@ class DreaMSBackboneFid(DreaMSBackbone):
             ff_dropout=ff_dropout, use_transformer_bias=use_transformer_bias)
 
     def forward(self, spec, charge=None):
-        """与父类唯一区别: 额外算出 graphormer 距离并传给 encoder。"""
+        """Only difference from the parent: it also computes the graphormer
+        distances and passes them to the encoder."""
         padding_mask = spec[:, :, 0] == 0
         if self.charge_feature:
             if charge is None:
@@ -198,7 +217,8 @@ class DreaMSBackboneFid(DreaMSBackbone):
 
 
 class DreamsMSEncoderFid(DreamsMSEncoder):
-    """只把 backbone 换成 Fid 版; 权重加载 / 预处理 / 前向投影全部继承。"""
+    """Only the backbone is swapped for the Fid version; weight loading,
+    preprocessing and the forward projection are all inherited."""
 
     def __init__(self, ckpt_path=None, output_dim=None, freeze_backbone=True,
                  n_highest_peaks=None, d_model=1024):
@@ -216,14 +236,16 @@ class DreamsMSEncoderFid(DreamsMSEncoder):
 
 
 class DreaMSAdductHarmonicTsfmClassifierV2(DreaMSAdductHarmonicTsfmClassifier):
-    """接口与 DreaMSAdductHarmonicTsfmClassifier 完全一致, 只换谱图编码器。
+    """Interface identical to DreaMSAdductHarmonicTsfmClassifier; only the
+    spectrum encoder is swapped.
 
-    δ 分支 / CE adapter / FusionBlock / 分层头 / forward 全部继承, 因此 DreaMSHT2
-    与 DreaMSHT 的差异严格只有 dreaMS 分支的忠实度这一项 (单变量)。
+    The delta branch / CE adapter / FusionBlock / hierarchical head / forward are
+    all inherited, so the difference between DreaMSHT2 and DreaMSHT is strictly
+    the fidelity of the dreaMS branch (a single variable).
     """
 
     def __init__(self, ckpt_path=None, freeze_backbone=True):
-        print(f"[DreaMSHT2] 忠实版谱图编码器: n_heads={getattr(config, 'DREAMS2_N_HEADS', 8)}, "
+        print(f"[DreaMSHT2] faithful spectrum encoder: n_heads={getattr(config, 'DREAMS2_N_HEADS', 8)}, "
               f"graphormer={getattr(config, 'DREAMS2_GRAPHORMER', True)}, "
               f"fourier_strategy={getattr(config, 'DREAMS2_FOURIER_STRAT', 'lin_float_int')}")
         super().__init__(ckpt_path=None, freeze_backbone=freeze_backbone)
@@ -236,7 +258,7 @@ class DreaMSAdductHarmonicTsfmClassifierV2(DreaMSAdductHarmonicTsfmClassifier):
 
 if __name__ == "__main__":
     print("=" * 70)
-    print("DreaMSHT2: 构造 + 权重加载 + 前向自检")
+    print("DreaMSHT2: construction + weight loading + forward self-check")
     print("=" * 70)
     ckpt = os.path.join(config.DREAMS_CKPT_DIR, "ssl_model.ckpt")
     model = DreaMSAdductHarmonicTsfmClassifierV2(ckpt_path=ckpt, freeze_backbone=False)
@@ -260,6 +282,6 @@ if __name__ == "__main__":
     model.eval()
     with torch.no_grad():
         logits = model(mz, inten, ce=ce, precursor_mz=pmz)
-    print(f"logits: {tuple(logits.shape)}  有限值={bool(torch.isfinite(logits).all())}")
+    print(f"logits: {tuple(logits.shape)}  finite={bool(torch.isfinite(logits).all())}")
     print("=" * 70)
-    print("自检 PASSED (完整回归请跑 verify_dreaMS_fidelity.py)")
+    print("self-check PASSED (run verify_dreaMS_fidelity.py for the full regression)")

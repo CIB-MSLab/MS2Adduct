@@ -6,10 +6,11 @@ import config
 
 
 def ion_mode_to_idx(v):
-    """离子模式字面量 → 0(正) / 1(负)。
+    """Map an ion-mode literal to 0 (positive) / 1 (negative).
 
-    兼容各数据集的不同写法: 'ESI+'/'ESI-'/'positive'/'negative'/'+'/'-' 以及 0/1。
-    无法识别时按正离子处理 (与 ADDUCT_TO_IDX 的默认类 [M+H]+ 一致)。
+    Accepts the spellings used by the different datasets: 'ESI+'/'ESI-'/
+    'positive'/'negative'/'+'/'-' as well as 0/1. Unrecognised values fall back
+    to positive, matching the default class [M+H]+ in ADDUCT_TO_IDX.
     """
     s = str(v).strip().lower()
     if s in ('1', 'negative', 'neg', 'esi-', '-', 'n'):

@@ -1,4 +1,7 @@
-"""dreaMS 风格傅里叶中性丢失编码自检。用法: python verify_fourier.py"""
+"""Self-check for the dreaMS-style Fourier neutral-loss encoding.
+
+Usage: python verify_fourier.py
+"""
 import os, sys, traceback
 import torch
 
@@ -26,7 +29,7 @@ def _make():
     return DreaMSAdductHarmonicTsfmClassifier(ckpt_path=None, freeze_backbone=True
                                               ).to(config.DEVICE)
 
-@check("[1] 默认 fourier; 显式 bases 时不构造 fourier_enc")
+@check("[1] fourier by default; no fourier_enc when bases is requested explicitly")
 def t_default():
     assert config.DELTA_ENCODER == "fourier"
     _reset("bases")
@@ -34,7 +37,7 @@ def t_default():
     assert m.harmonic_enc.fourier_enc is None
     assert m.harmonic_enc.in_proj[1].in_features == 61 * 3 * 2
 
-@check("[2] fourier: 13994 维输入, 频率固定")
+@check("[2] fourier: 13994-dim input, frequencies held fixed")
 def t_fourier():
     _reset("fourier")
     m = _make()
@@ -44,7 +47,7 @@ def t_fourier():
     assert m.harmonic_enc.in_proj[1].in_features == 13994
     assert fe.b.requires_grad is False
 
-@check("[3] fourier 前向有限 + padding 不变性")
+@check("[3] fourier forward is finite + padding invariance")
 def t_forward():
     _reset("fourier")
     m = _make(); m.eval()
@@ -62,7 +65,7 @@ def t_forward():
         b = m.harmonic_enc(prec.unsqueeze(-1) - mz2, mask)
     assert (a - b).abs().max().item() <= 1e-6, (a - b).abs().max().item()
 
-@check("[4] 切换开关改变输出 (不是被静默忽略)")
+@check("[4] toggling the switch changes the output (not silently ignored)")
 def t_switch():
     _reset("bases"); mb = _make().eval()
     _reset("fourier"); mf = _make().eval()
@@ -79,7 +82,7 @@ def t_switch():
         b = mf.harmonic_enc(delta, mz > 0)
     assert (a - b).abs().max().item() > 1e-6
 
-@check("[5] trainable=True 时频率有梯度")
+@check("[5] frequencies receive gradients when trainable=True")
 def t_trainable():
     _reset("fourier", trainable=True)
     m = _make()
@@ -100,7 +103,7 @@ def main():
         except Exception as e:
             fails += 1; print(f"  FAIL {name}: {type(e).__name__}: {e}")
             traceback.print_exc()
-    print("全部通过" if not fails else f"{fails} 项失败")
+    print("all checks passed" if not fails else f"{fails} check(s) failed")
     sys.exit(1 if fails else 0)
 
 if __name__ == "__main__":

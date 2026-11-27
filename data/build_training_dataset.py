@@ -32,7 +32,6 @@ def parse_mgf(mgf_path):
                 precursor_mz = current.get('PRECURSOR_MZ', '')
 
                 if smi and peaks:
-                    # 归一化强度到 0-100
                     max_int = max(p[1] for p in peaks)
                     mz_list = [p[0] for p in peaks]
                     intensity_list = [p[1] / max_int * 100 for p in peaks]
@@ -96,7 +95,6 @@ if __name__ == '__main__':
     print(f"\n[2/2] 保存输出...")
     save_outputs(records, OUTPUT_JSON, OUTPUT_PKL)
 
-    # 统计
     unique_smiles = len(set(r['smiles'] for r in records))
     unique_adducts = len(set(r['adduct'] for r in records))
     total_peaks = sum(len(r['mz']) for r in records)

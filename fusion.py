@@ -39,7 +39,6 @@ class CEAdapter(nn.Module):
         self.use_polarity = use_polarity
         emb_dim = ce_embed_dim
         if use_polarity:
-            # 极性是 2 类离散量, 用嵌入而非 one-hot: proj 前的维度保持精简
             self.polarity_embedding = nn.Embedding(n_polarity, polarity_embed_dim)
             emb_dim += polarity_embed_dim
         else:
@@ -107,39 +106,31 @@ class FusionBlock(nn.Module):
             self.proj = nn.Sequential(nn.Linear(2 * dim, dim), nn.GELU())
             self.ln = nn.LayerNorm(dim)
         elif fusion == 'gated_cat':
-            # d, h, 门控后的 d⊙h 三路拼接 (比 plain hadamard 多一层软门控抑制噪声通道)
             self.out_dim = 3 * dim
             self.gate = nn.Linear(2 * dim, dim)
         elif fusion == 'bilinear':
-            # 低秩双线性: d + h + proj(d⊙h), LN
             self.out_dim = dim
             self.proj = nn.Linear(dim, dim)
             nn.init.zeros_(self.proj.weight)
             nn.init.zeros_(self.proj.bias)
             self.ln = nn.LayerNorm(dim)
         elif fusion == 'film':
-            # FiLM: h 学 scale/shift 调制 d, 与 h 拼接
             self.out_dim = 2 * dim
             self.scale = nn.Sequential(nn.Linear(dim, dim), nn.Tanh())
             self.shift = nn.Linear(dim, dim)
             nn.init.zeros_(self.shift.weight)
             nn.init.zeros_(self.shift.bias)
         elif fusion == 'coattn':
-            # d↔h 双 token 自注意力融合 (cross-attention 的向量级实现)
             self.out_dim = dim
             self.mha = nn.MultiheadAttention(dim, 4, batch_first=True)
             self.norm = nn.LayerNorm(dim)
         elif fusion == 'tri_cat':
-            # 三方: 直接拼接 [d, δ, ce]
             self.out_dim = 3 * dim
         elif fusion == 'tri_attn':
-            # 三方: [d, δ, ce] 三 token 自注意力, 残差后取均值
             self.out_dim = dim
             self.mha = nn.MultiheadAttention(dim, 4, batch_first=True)
             self.norm = nn.LayerNorm(dim)
         elif fusion == 'tri_xattn':
-            # 三方: d 作 query, [δ, ce] 作 key/value 的 cross-attention。
-            # 与 tri_attn 的区别是信息流向单一 (d 读取 δ/ce), 不让 δ/ce 互相改写。
             self.out_dim = dim
             self.mha = nn.MultiheadAttention(dim, 4, batch_first=True)
             self.q_norm = nn.LayerNorm(dim)
@@ -172,9 +163,6 @@ class FusionBlock(nn.Module):
             return torch.cat([dmod, h], dim=-1)
         if self.fusion in ('tri_cat', 'tri_attn', 'tri_xattn'):
             if self.fusion == 'tri_xattn' and aux is None:
-                # CE token 被移除 (config.CE_TOKEN_ENABLED=False): KV 从 [δ, CE] 缩成 [δ]。
-                # 单 token 时注意力权重恒为 1, cross-attention 退化为对 δ 的线性投影 +
-                # 残差 —— 这正是"没有 CE 时 d 只能读 δ"的定义, 不是实现缺陷。
                 q = self.q_norm(d).unsqueeze(1)                   # (B,1,dim)
                 kv = self.kv_norm(h.unsqueeze(1))                 # (B,1,dim)
                 a, _ = self.mha(q, kv, kv)

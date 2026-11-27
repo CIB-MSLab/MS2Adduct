@@ -28,8 +28,6 @@ import config
 from model_dreaMS import DreaMSAdductClassifier
 from model_dreaMS_harmonictsfm import DreaMSAdductHarmonicTsfmClassifier
 
-# 控制臂 (arm B) 的既有 ckpt: 权重里没有极性嵌入, 因此 strict 加载能直接证明
-# POLARITY_* 全关时的新代码与改动前逐位一致。
 CKPT_DIRS = sorted(glob.glob(os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "ckpt", "MS2ADDUCT_DreaMSHT2_s*")))
 _results = []
@@ -43,13 +41,9 @@ def check(name):
 
 
 def _make(flags, ckpt=None):
-    # 三个极性开关一律先归零再套用 flags —— 否则 config 默认值(方案 A: 仅推理期屏蔽)
-    # 会漏进个别用例, 让"全关"实际上并非全关。测试必须对默认值变更免疫。
     for k in ('POLARITY_AS_INPUT', 'POLARITY_MASK_OUTPUT',
               'POLARITY_MASK_INFERENCE_ONLY'):
         setattr(config, k, False)
-    # 控制臂 ckpt 是手工基频表 + bilinear/gate 架构; 默认值已切到 fourier/tri_xattn,
-    # 自检必须固定回该架构, 否则 strict 加载会因结构不符失败。
     config.DELTA_ENCODER = "bases"
     config.FUSION = "bilinear"
     config.CE_FUSION = "gate"
@@ -72,7 +66,6 @@ def _batch(b=4, n=40):
     return mz, inten, ce, prec, pol
 
 
-# ════════════════════════════════════════════════════════════════════
 @check("[1] 开关全关 = 与改动前逐位一致 (可 strict 加载控制臂权重)")
 def t1():
     ck = next((d for d in CKPT_DIRS if os.path.exists(os.path.join(d, "best_model.pth"))), None)
@@ -161,12 +154,11 @@ def t6():
         lg = m(mz, inten, ce=ce, precursor_mz=prec, polarity=pol)
         lg0 = m(mz, inten, ce=ce, precursor_mz=prec, polarity=None)
     for i in range(lg.shape[0]):
-        dead = P if pol[i].item() == 1 else N                       # 反极性者应被屏蔽
+        dead = P if pol[i].item() == 1 else N
         alive = N if pol[i].item() == 1 else P
         assert (lg[i, dead] == MASK).all(), lg[i]
         assert torch.isfinite(lg[i, alive]).all()
         assert lg[i].argmax().item() in alive
-        # 数值等价性: 屏蔽位在 softmax 里的概率必须是**精确的 0** (而非"很小")
         p = torch.softmax(lg[i].float(), -1)
         assert p[dead].sum().item() == 0.0, f"屏蔽位概率 {p[dead].sum().item()}"
     assert (lg0 > MASK).all(), "不传 polarity 时不应屏蔽"
@@ -194,12 +186,11 @@ def t8():
     m.train()
     crit = FocalLoss(gamma=2.0, alpha=torch.ones(config.NUM_ADDUCT_CLASSES, device=config.DEVICE))
     mz, inten, ce, prec, pol = _batch()
-    lab = torch.tensor([0, 1, 2, 4], device=config.DEVICE)[:mz.shape[0]]   # 类别本身与极性自洽
+    lab = torch.tensor([0, 1, 2, 4], device=config.DEVICE)[:mz.shape[0]]
     lg = m(mz, inten, ce=ce, precursor_mz=prec, polarity=pol)
     loss = crit(lg, lab)
     assert torch.isfinite(loss), f"loss={loss}"
     loss.backward()
-    # 屏蔽位的梯度必须是 0 (softmax 权重为 0), 但通路其余部分要有梯度
     g = 0.0
     for p in m.ms_encoder.proj.parameters():
         if p.grad is not None:
@@ -219,8 +210,6 @@ def t9():
     lab = torch.tensor([0, 1, 2, 4], device=config.DEVICE)[:mz.shape[0]].cpu().numpy()
     with torch.no_grad():
         lg = m(mz, inten, ce=ce, precursor_mz=prec, polarity=pol).float().cpu()
-    # 若屏蔽位用的是 -inf, 这里会 (也曾经真的会) 抛
-    # "Input contains infinity or a value too large for dtype('float32')"
     k3 = top_k_accuracy_score(lab, lg.numpy(), k=3, labels=range(9))
     preds = lg.argmax(dim=-1).tolist()
     a = accuracy_score(lab, preds)

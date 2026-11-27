@@ -32,12 +32,6 @@ from model_dreaMS import (
 from model_dreaMS_harmonictsfm import DreaMSAdductHarmonicTsfmClassifier
 
 
-# 字面复刻原版: 直接 materialize (B,N,N,980) 的成对差张量。
-# False (默认) 走代数等价的秩一快捷式: dim=-1 是线性求和, 所以
-#   Σ_k (f_ik − f_jk) == s_i − s_j,  s = Σ_k f_k
-# 两条路径数学等价, 但快捷式省下 N*N*980 的显存 —— 原版是 N=61/batch=256,
-# 本工程是 N=101/batch=26, 照抄会多占约 1.0 GB。实际数值差由
-# verify_dreaMS_fidelity.py 第 [5] 项监控 (fp32 下预期 ~1e-6)。
 GD_EXACT = False
 
 
@@ -73,12 +67,8 @@ class MultiheadAttentionFid(MultiheadAttention):
         att_weights = torch.einsum('bhnd,bhdm->bhnm', q, k.transpose(-2, -1))
         att_weights = att_weights * self.scale
         if graphormer_dists is not None:
-            # 对应 layers.py:94-95 (先加 bias, 后 masked_fill, 再 softmax)
             att_weights = att_weights + graphormer_dists.sum(dim=-1).unsqueeze(1).to(att_weights.dtype)
         if mask is not None:
-            # 刻意保留 -1e4 而非原版的 -1e9: fp16 下 -1e9 → -inf, 而 padding query 是整行
-            # 被屏蔽的, softmax(-inf,...,-inf) 会得到 NaN (原版全程 fp32/64 才没暴露)。
-            # fp32 下两者数学等价 (padding 行全是同一常数, softmax 后同为均匀分布)。
             att_weights.masked_fill_(mask.unsqueeze(1).unsqueeze(-1), -1e4)
         att_weights = F.softmax(att_weights, dim=-1)
         att_weights = F.dropout(att_weights, p=self.dropout, training=self.training)
@@ -175,7 +165,6 @@ class DreaMSBackboneFid(DreaMSBackbone):
             max_tbxic_stdev=max_tbxic_stdev, ff_peak_depth=ff_peak_depth,
             ff_fourier_depth=ff_fourier_depth, ff_fourier_d=ff_fourier_d,
             use_transformer_bias=use_transformer_bias, no_ffs_bias=no_ffs_bias)
-        # 父类构造的是普通过滤器版本; 同参数重建 => 初始化规则一致, 不引入新参数
         self.transformer_encoder = TransformerEncoderFid(
             d_model=d_model, n_heads=n_heads, n_layers=n_layers,
             use_layernorm=use_layernorm, pre_norm=pre_norm,
@@ -198,7 +187,6 @@ class DreaMSBackboneFid(DreaMSBackbone):
         if self.d_fourier:
             with autocast(enabled=False):
                 fourier_features = self.ff_fourier(self.fourier_enc(spec[..., [0]].float()))
-            # 距离用 fp32 特征算 (原版全程 fp32/64), 精度损失只发生在加进 attention 时
             if self.use_graphormer:
                 graphormer_dists = pairwise_mz_diff(fourier_features)
             fourier_features = fourier_features.to(dtype=peak_embs.dtype)
@@ -214,8 +202,6 @@ class DreamsMSEncoderFid(DreamsMSEncoder):
 
     def __init__(self, ckpt_path=None, output_dim=None, freeze_backbone=True,
                  n_highest_peaks=None, d_model=1024):
-        # 父类先按 ckpt_path=None 走一遍 (只为拿到 proj 头与 output_dim/n_highest_peaks 的
-        # 默认值解析), 下面把 backbone 换成忠实版。多构造一次的代价是 ~1s 且不读 ckpt。
         super().__init__(ckpt_path=None, output_dim=output_dim, freeze_backbone=False,
                          n_highest_peaks=n_highest_peaks, d_model=d_model)
         self.backbone = DreaMSBackboneFid()
@@ -240,7 +226,6 @@ class DreaMSAdductHarmonicTsfmClassifierV2(DreaMSAdductHarmonicTsfmClassifier):
         print(f"[DreaMSHT2] 忠实版谱图编码器: n_heads={getattr(config, 'DREAMS2_N_HEADS', 8)}, "
               f"graphormer={getattr(config, 'DREAMS2_GRAPHORMER', True)}, "
               f"fourier_strategy={getattr(config, 'DREAMS2_FOURIER_STRAT', 'lin_float_int')}")
-        # 先按 ckpt_path=None 构造 (避免把 1.2GB ckpt 读两遍), 随后整体替换 ms_encoder
         super().__init__(ckpt_path=None, freeze_backbone=freeze_backbone)
         self.ms_encoder = DreamsMSEncoderFid(
             ckpt_path=ckpt_path,

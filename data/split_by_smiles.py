@@ -38,7 +38,6 @@ def load_dataset(path):
 
 def split_by_smiles(records, train_ratio, val_ratio, test_ratio, seed):
     """按 SMILES 分组后划分，保证同一 SMILES 不出现在多个集合中"""
-    # 按 SMILES 分组
     groups = defaultdict(list)
     for r in records:
         groups[r['smiles']].append(r)
@@ -47,7 +46,6 @@ def split_by_smiles(records, train_ratio, val_ratio, test_ratio, seed):
     print(f"总谱图数: {len(records)}")
     print(f"唯一 SMILES: {len(smiles_list)}")
 
-    # 随机打乱 SMILES
     random.seed(seed)
     random.shuffle(smiles_list)
 
@@ -59,7 +57,6 @@ def split_by_smiles(records, train_ratio, val_ratio, test_ratio, seed):
     val_smiles = set(smiles_list[n_train:n_train + n_val])
     test_smiles = set(smiles_list[n_train + n_val:])
 
-    # 展开记录
     train_records = [r for s in train_smiles for r in groups[s]]
     val_records = [r for s in val_smiles for r in groups[s]]
     test_records = [r for s in test_smiles for r in groups[s]]

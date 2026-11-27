@@ -93,12 +93,6 @@ class HarmonicTsfmEncoder(nn.Module):
             raise ValueError(
                 "DELTA_ENCODER 只支持 'bases' 或 'fourier', "
                 f"收到 {self.delta_encoder_mode!r}")
-        # δ token 的定义 (2026-10-20):
-        #   "peak": 每个峰一个 token, δ_i = precursor_mz − mz_i (原行为)
-        #   "pair": 每个峰对一个 token, pd_ij = |δ_i − δ_j| = |mz_i − mz_j|
-        #   "peak_top5": 全部峰 δ + 强度前 K 个峰锚定的峰间差
-        # 峰对模式逐样本前向 (对数随峰数变化, 最多 C(100,2)=4,950), 避免 padding
-        # 到批内最大对数带来的显存浪费; 参数与 "peak" 完全相同, ckpt 可 strict 互载。
         self.delta_token_mode = getattr(config, 'DELTA_TOKEN_MODE', 'peak')
         if self.delta_token_mode not in ('peak', 'pair', 'peak_top5'):
             raise ValueError(
@@ -165,7 +159,6 @@ class HarmonicTsfmEncoder(nn.Module):
                 nn.LayerNorm(d_pair),
                 nn.Linear(d_pair, self.n_heads),
             )
-            # 零初始化: 训练起点与关闭时函数等价; 只有有用时梯度才让它偏离
             nn.init.zeros_(self.pair_proj[-1].weight)
             nn.init.zeros_(self.pair_proj[-1].bias)
 
@@ -185,7 +178,6 @@ class HarmonicTsfmEncoder(nn.Module):
             if self.delta_token_mode == 'peak_top5':
                 return self._forward_anchor(raw, mask, intensity)
             if self.fourier_enc is not None:
-                # FourierFeatures 需要最后一维为 1 (与 dreaMS 的 spec[..., [0]] 一致)
                 tok = self.in_proj(self.fourier_enc(delta_c.unsqueeze(-1)))
             else:
                 tok = self.in_proj(raw_harmonic_components(delta_c))
@@ -197,7 +189,6 @@ class HarmonicTsfmEncoder(nn.Module):
 
             pair_bias = None
             if self.pair_proj is not None:
-                # 用 clamp 前的 raw δ: |δi-δj| 严格等于 |mzi-mzj| (含峰高于前体的情形)
                 pd = (raw.unsqueeze(-2) - raw.unsqueeze(-1)).abs()
                 feats = raw_harmonic_components(pd, bases=self.pair_bases,
                                                 n_harm=self.pair_harm)
@@ -232,8 +223,6 @@ class HarmonicTsfmEncoder(nn.Module):
             tok = self.in_proj(self.fourier_enc(pd.unsqueeze(-1))).unsqueeze(0)
             cls = self.cls_token.expand(1, -1, -1)
             tok = torch.cat([cls, tok], dim=1)
-            # 大谱最多 4,950 个 token, 4 头注意力分数约 0.4 GB/样本; checkpoint
-            # 只保留各层输入, 反向时重算, 避免一个 batch 里多个大谱把显存打爆
             out = checkpoint(self.encoder, tok, use_reentrant=False) \
                 if self.training else self.encoder(tok)
             outs.append(self.out(out[:, 0, :]) * self.output_scale)
@@ -268,8 +257,6 @@ class HarmonicTsfmEncoder(nn.Module):
                 K = min(self.anchor_k, k)
                 top = torch.topk(it, K).indices
                 pd = (d[top].unsqueeze(1) - d.unsqueeze(0)).abs()   # (K,k)
-                # 只与比锚点 m/z 更小的峰配对: mz_j < mz_a ⇔ δ_j > δ_a。
-                # 严格大于同时排除 j=a 与 m/z 完全相同的重复峰。
                 keep = d.unsqueeze(0) > d[top].unsqueeze(1)         # (K,k)
                 parts.append(pd[keep])
             v = torch.cat(parts).clamp(0.0, 2000.0)
@@ -297,24 +284,12 @@ class HarmonicTsfmEncoder(nn.Module):
 
 
 # ════════════════════════════════════════════════════════════════════
-# Fusion blocks 见 fusion.py (FusionBlock, 两种编码器共用)
-# ════════════════════════════════════════════════════════════════════
-
-
-# ════════════════════════════════════════════════════════════════════
 # Classifier: DreaMS + δ-Transformer + fusion
 # ════════════════════════════════════════════════════════════════════
 
 class DreaMSAdductHarmonicTsfmClassifier(DreaMSAdductClassifier):
     """接口与 DreaMSAdductHarmonicClassifier 一致; 仅 δ 编码方式与融合不同。"""
 
-    # 屏蔽位的常数: 用 -1e4 而非 -inf, 理由与两处既有实现一致 ——
-    #   (1) model_dreaMS.MultiheadAttention 的 attention mask 同样取 -1e4 (fp16 下
-    #       -1e9 → -inf 会导致softmax出 NaN);
-    #   (2) sklearn.metrics.top_k_accuracy_score 会对分数矩阵做全有限性检查, 传入
-    #       -inf 直接抛 ValueError —— 而那正是 _print_test_results 的指标之一。
-    # 数值上等价: 真实 logits 量级在 ±100 内, softmax 里 exp(-1e4-max) 在 fp32/fp16
-    # 下都下溢为**精确的 0**, 故该类的概率与梯度均为 0, argmax 也永远不会选中它。
     MASKED_LOGIT = -1e4
 
     def __init__(self, ckpt_path=None, freeze_backbone=True):
@@ -324,19 +299,13 @@ class DreaMSAdductHarmonicTsfmClassifier(DreaMSAdductClassifier):
             output_dim=config.MS_PE_DIM,
             freeze_backbone=freeze_backbone,
         )
-        # 离子模式 (正/负) 在采集时已知: 见 config.py 的说明块。
-        #   pol_in   — 极性嵌入与 CE 嵌入拼接后一起进门控
-        #   pol_mask — 用给定极性把反极性类屏蔽掉 (不再让极性参与 argmax 竞争)
         pol_in = bool(getattr(config, 'POLARITY_AS_INPUT', False))
         pol_mask = bool(getattr(config, 'POLARITY_MASK_OUTPUT', False))
         self.mask_output_by_polarity = pol_mask
-        # 热身: 前 mask_start_epoch-1 轮不施加训练期屏蔽 (0 = 全程屏蔽)。
-        # 动机见 config.POLARITY_MASK_START_EPOCH 的说明; 验证/评测不受影响。
         self.mask_start_epoch = int(getattr(config, 'POLARITY_MASK_START_EPOCH', 0))
         self.mask_inference_only = bool(
             getattr(config, 'POLARITY_MASK_INFERENCE_ONLY', False))
         self.current_epoch = 0
-        # 训练/评测循环据此决定是否把 batch['polarity'] 传进来
         self.accepts_polarity = pol_in or pol_mask or self.mask_inference_only
         pol_kw = dict(use_polarity=pol_in,
                       polarity_embed_dim=getattr(config, 'POLARITY_EMB_DIM', 8))
@@ -350,11 +319,9 @@ class DreaMSAdductHarmonicTsfmClassifier(DreaMSAdductClassifier):
             mode=d_mode,
             num_ce_bins=getattr(config, 'CE_NUM_BINS', 64),
             ce_embed_dim=getattr(config, 'CE_EMBED_DIM', 32),
-            # 三方融合要求 CE 向量与 d/δ 同维; 其余模式用较小的 aux
             aux_dim=config.MS_PE_DIM if use_tri else getattr(config, 'CE_AUX_DIM', 64),
             **pol_kw,
         )
-        # CE 只作用于 δ 分支的模式 (gate_delta / film_delta): d 分支不被 CE 触碰
         delta_mode = {'gate_delta': 'gate', 'film_delta': 'film'}.get(ce_mode)
         self.ce_adapter_delta = CEAdapter(
             feat_dim=getattr(config, 'HARMONIC_EMB_DIM', config.MS_PE_DIM),
@@ -371,8 +338,6 @@ class DreaMSAdductHarmonicTsfmClassifier(DreaMSAdductClassifier):
         dropout = config.DROPOUT_RATE
         use_hierarchical = getattr(config, 'HIERARCHICAL_HEADS', False)
         if use_hierarchical:
-            # 极性不需要预测 (采集时已知): ION_AUX_ENABLED=False 时不构造该头,
-            # 训练循环的 _hierarchical() 随即跳过辅助 loss。两个同极性内的分类头保留。
             self.ion_mode_head = (nn.Linear(feat_dim, 2)
                                   if getattr(config, 'ION_AUX_ENABLED', True) else None)
             self.positive_head = nn.Sequential(
@@ -428,8 +393,6 @@ class DreaMSAdductHarmonicTsfmClassifier(DreaMSAdductClassifier):
         aux = None
         if ce is not None and self.ce_adapter_delta is None:
             feat, aux = self.ce_adapter.apply(feat, ce, polarity)
-            # CE token 消融 (config.CE_TOKEN_ENABLED=False): 模块与参数保留, 但不把
-            # CE 描述向量送进融合。tri_xattn 的 KV 因此从 [δ, CE] 缩成 [δ]。
             if not getattr(config, 'CE_TOKEN_ENABLED', True):
                 aux = None
 
@@ -439,9 +402,9 @@ class DreaMSAdductHarmonicTsfmClassifier(DreaMSAdductClassifier):
             mask = mz > 0.0
             h = self.harmonic_enc(delta, mask, intensity)     # (B,dim) fp32
             if self.ce_adapter_delta is not None and ce is not None:
-                h, _ = self.ce_adapter_delta.apply(h, ce, polarity)   # CE 只碰 δ
+                h, _ = self.ce_adapter_delta.apply(h, ce, polarity)
         else:
-            h = torch.zeros_like(feat)                        # cache 模式无 δ
+            h = torch.zeros_like(feat)
         fused = self.fusion(feat, h, aux if self.use_tri else None)
         if aux is not None and not self.use_tri:
             fused = torch.cat([fused, aux.to(dtype=fused.dtype)], dim=-1)
@@ -453,7 +416,6 @@ class DreaMSAdductHarmonicTsfmClassifier(DreaMSAdductClassifier):
             self._last_ion_logits = self.ion_mode_head(fused)
         pos_logits = self.positive_head(fused)
         neg_logits = self.negative_head(fused)
-        # 头输出在 AMP 下可能是 fp16; logits 缓冲 dtype 跟随头输出, 避免 Index put dtype 不匹配
         logits = torch.full((fused.shape[0], config.NUM_ADDUCT_CLASSES),
                             self.MASKED_LOGIT, device=pos_logits.device,
                             dtype=pos_logits.dtype)

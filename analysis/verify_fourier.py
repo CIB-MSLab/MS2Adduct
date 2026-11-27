@@ -34,11 +34,6 @@ def t_default():
     assert m.harmonic_enc.fourier_enc is None
     assert m.harmonic_enc.in_proj[1].in_features == 61 * 3 * 2
 
-# NOTE(2026-10-18): 原 brief 写的是 11994 维 (5997 频率)。该数字对应 x_max=1000
-# (dreaMS 默认 max_mz)。lin_float_int 的实际公式为
-#   range(2, ceil(1/x_min), 2) + range(2, ceil(x_max), 1)
-# x_min=1e-4, x_max=2000 时为 4999 + 1998 = 6997 个频率 → sin+cos 后 13994 维。
-# x_max=2000 是为覆盖现有 δ clamp(0, 2000), 故以实际维数为准。
 @check("[2] fourier: 13994 维输入, 频率固定")
 def t_fourier():
     _reset("fourier")
@@ -71,7 +66,6 @@ def t_forward():
 def t_switch():
     _reset("bases"); mb = _make().eval()
     _reset("fourier"); mf = _make().eval()
-    # strict=False 只忽略缺键/多键, 不忽略 shape 不匹配; in_proj 维度不同, 先过滤。
     sd_b, sd_f = mb.state_dict(), mf.state_dict()
     shared = {k: v for k, v in sd_b.items()
               if k in sd_f and sd_f[k].shape == v.shape}

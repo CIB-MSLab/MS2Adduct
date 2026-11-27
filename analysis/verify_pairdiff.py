@@ -57,7 +57,7 @@ def t_sham():
     assert s1 != list(true)
 
 def _reset_pairdiff(enabled=False, sham=False):
-    config.DELTA_ENCODER = "bases"   # 默认已切 fourier; 本自检固定手工基频表架构
+    config.DELTA_ENCODER = "bases"
     config.PAIRDIFF_ENABLED = enabled
     config.PAIRDIFF_BASE_SET = "both"
     config.PAIRDIFF_HARMONICS = 1
@@ -146,13 +146,11 @@ def t_bias_finite():
 @check("[9] 极端输入不产生 NaN")
 def t_extreme():
     _reset_pairdiff(True); m = _make_model(); m.eval()
-    # 全 padding
     mz = torch.zeros(2, 20, device=config.DEVICE)
     inten = torch.zeros(2, 20, device=config.DEVICE)
     prec = torch.tensor([300.0, 500.0], device=config.DEVICE)
     with torch.no_grad():
         assert torch.isfinite(m(mz, inten, precursor_mz=prec)).all()
-    # 单峰 + 重复峰
     mz = torch.zeros(2, 20, device=config.DEVICE)
     mz[0, 0] = 100.0; mz[1, :5] = 100.0
     inten = torch.zeros(2, 20, device=config.DEVICE); inten[:, :5] = 1.0

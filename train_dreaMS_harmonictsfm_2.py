@@ -27,7 +27,6 @@ import config
 import model_dreaMS_harmonictsfm_2 as M2
 from model_dreaMS_harmonictsfm_2 import DreaMSAdductHarmonicTsfmClassifierV2
 from dataloader import get_dataloader
-# 训练/验证/评估循环与 FocalLoss/ION_CE
 from train_utils import (
     AverageMeter, FocalLoss, ION_CE, _hierarchical,
     train_one_epoch_live, validate_live, test_evaluation_live,
@@ -92,7 +91,6 @@ def main():
     parser.add_argument('--data', type=str, default='spectraverse',
                         choices=list(config.DATA_SETS.keys()),
                         help='数据集组合 (见 config.DATA_SETS): spectraverse=主数据集')
-    # ── dreaMS 原型一致性开关 (默认 None = 沿用 config.DREAMS2_*, 即"完全一致") ──
     parser.add_argument('--heads', type=int, default=None, choices=[8, 16],
                         help='注意力头数; 8 = ssl_model.ckpt 预训练配置 (默认), 16 = 旧移植版行为')
     parser.add_argument('--gd', type=int, default=None, choices=[0, 1],
@@ -101,7 +99,6 @@ def main():
                         help='覆盖 config.MAX_PEAKS; 不给则沿用 config (100), 60 = 预训练值')
     parser.add_argument('--dropout', type=float, default=None,
                         help='覆盖 backbone dropout; 不给则沿用 backbone 默认 (0.0), 0.1 = 预训练值')
-    # ── δ 分支 / CE 分箱: 供超参搜索 (bo_search.py) 覆盖, 默认 None = 沿用 config ──
     parser.add_argument('--hsfm_dim', type=int, default=None,
                         help='δ transformer token 维度; 必须能被 --hsfm_heads 整除')
     parser.add_argument('--hsfm_layers', type=int, default=None,
@@ -131,20 +128,13 @@ def main():
     if args.mode is not None:
         config.DREAMS_MODE = args.mode
 
-    # ── 数据集组合: 必须在后面建 dataloader 之前落定 ──
     config.TRAIN_PKL, config.VAL_PKL, config.TEST_PKL = config.DATA_SETS[args.data]
 
-    # ── 中性丢失基频表: 显式 --bases 优先, 否则沿用 config (唯一真源) ──
     if args.bases is not None:
         config.HARMONIC_BASES = args.bases
         config.HARMONIC_BASE_FREQUENCIES = config.HARMONIC_BASE_SETS[args.bases]
-        # --bases 只对"手工基频表"编码有意义; 显式传它时强制回到 bases,
-        # 否则在 DELTA_ENCODER="fourier" 默认下会静默忽略 --bases。
         config.DELTA_ENCODER = "bases"
 
-    # ── dreaMS 一致性开关: 必须在建模与建 dataloader 之前落定 ──
-    # MAX_PEAKS 同时决定 dataloader 的 padding 长度与 encoder 的 n_highest_peaks,
-    # 所以这里改 config 即可, dataloader 无需改动。
     if args.heads is not None:
         config.DREAMS2_N_HEADS = args.heads
     if args.gd is not None:
@@ -157,7 +147,6 @@ def main():
     if args.dropout is not None:
         config.DREAMS2_DROPOUT = args.dropout
 
-    # ── δ 分支 / CE 分箱: 必须在建模之前落定 (HarmonicTsfmEncoder 与 CEAdapter 构造时读) ──
     if args.hsfm_dim is not None:
         config.HSFM_DIM = args.hsfm_dim
     if args.hsfm_layers is not None:
@@ -166,7 +155,6 @@ def main():
         config.HSFM_HEADS = args.hsfm_heads
     if args.ce_bins is not None:
         config.CE_NUM_BINS = args.ce_bins
-    # nn.TransformerEncoderLayer 要求 d_model % nhead == 0; 这里提前拦, 免得报错报在 torch 深处
     assert config.HSFM_DIM % config.HSFM_HEADS == 0, \
         f"HSFM_DIM({config.HSFM_DIM}) 必须能被 HSFM_HEADS({config.HSFM_HEADS}) 整除"
 
@@ -191,7 +179,6 @@ def main():
     backup_project_files(experiment_dir)
     log_file = os.path.join(experiment_dir, "trainlog.txt")
 
-    # ── 记录本次实验的全部自变量 (基频表逐条落盘, 便于事后审计) ──
     with open(log_file, "a", encoding="utf-8") as f:
         f.write("=" * 70 + "\n")
         f.write(f"data={args.data} | train={config.TRAIN_PKL} | val={config.VAL_PKL} | "
@@ -209,8 +196,6 @@ def main():
                 f"max_peaks={config.MAX_PEAKS} (DREAMS2_MAX_PEAKS={config.DREAMS2_MAX_PEAKS}) | "
                 f"dropout={config.DREAMS2_DROPOUT if config.DREAMS2_DROPOUT is not None else 0.0} | "
                 f"gd_exact={M2.GD_EXACT}\n")
-        # 离子模式作为已知输入 (控制臂两项均为 False, 见 config 的说明块)。
-        # ablation/repair_meta.py 的 HEADER_KEYS 按这两个键名还原配置。
         f.write(f"polarity_input={config.POLARITY_AS_INPUT} | "
                 f"polarity_mask={config.POLARITY_MASK_OUTPUT} | "
                 f"polarity_mask_start={config.POLARITY_MASK_START_EPOCH} | "
@@ -245,10 +230,6 @@ def main():
         freeze = (mode != 'finetune')
         ckpt = os.path.join(config.DREAMS_CKPT_DIR, "ssl_model.ckpt")
         if mode == 'scratch':
-            # 真正的从头训练: 不加载预训练权重。
-            # 注意旧版训练入口的 else 分支永远传 ckpt 且
-            # freeze = (mode != 'finetune'), 所以那边的 'scratch' 实际是"冻结预训练
-            # backbone", 并非随机初始化 —— 这里修正为 ckpt=None + 全部可训练。
             ckpt, freeze = None, False
         print(f"[mode] {mode} | ckpt={ckpt if ckpt else 'None (随机初始化)'} | "
               f"freeze_backbone={freeze}")
@@ -256,7 +237,7 @@ def main():
             ckpt_path=ckpt, freeze_backbone=freeze).to(device)
         if args.init_from:
             init_sd = torch.load(args.init_from, map_location=device)
-            model.load_state_dict(init_sd)          # strict: 结构不符必须报错
+            model.load_state_dict(init_sd)
             print(f"[init] 热启动自 {args.init_from} (strict)")
         train_fn = train_one_epoch_live
         val_fn = validate_live
@@ -270,7 +251,6 @@ def main():
     n_hm = sum(p.numel() for p in model.harmonic_enc.parameters())
     print(f"Params: {n_all/1e6:.2f}M (trainable {n_tr/1e6:.2f}M) | δ-tsfm {n_hm/1e3:.0f}K")
 
-    # ── 损失 ──
     use_focal = getattr(config, 'USE_FOCAL', False)
     if use_focal:
         cnt = Counter()
@@ -299,7 +279,6 @@ def main():
     counter = 0
     for epoch in range(1, config.EPOCHS + 1):
         if hasattr(model, 'set_epoch'):
-            # POLARITY_MASK_START_EPOCH 的预热判断; 对没有该机制的模型是 no-op
             model.set_epoch(epoch)
         train_loss, train_acc = train_fn(model, train_loader, optimizer, criterion,
                                          device, scaler=scaler)
@@ -312,10 +291,8 @@ def main():
         with open(log_file, "a", encoding="utf-8") as f:
             f.write(msg + "\n")
         if args.select == 'f1':
-            # 按目标指标 (val Macro F1) 选 checkpoint 与早停
             improved = val_f1 > best_val_f1
         else:
-            # 冠军原判据: val_loss 或 val_acc 任一改善就覆盖 best (常导致保留偏晚的过拟合 ckpt)
             improved = val_loss < best_val_loss or val_acc > best_val_acc
         if val_f1 > best_val_f1:
             best_val_f1 = val_f1

@@ -55,18 +55,13 @@ class AdductDataset(Dataset):
             ce = 0.0
         ce = float(ce)
 
-        # 离子模式 (正/负): 采集时已知的输入, 不是预测目标。
-        # 优先取谱图元数据里的字段 (ion_mode / polarity); 没有该字段时退化为按 adduct
-        # 直接读出极性 —— 对真实数据而言这两者本就同源: 选正模式才会看到 [M+H]+。
         ion = item.get('ion_mode', item.get('polarity'))
         if ion is None or (isinstance(ion, str) and not ion.strip()):
             polarity = config.POLARITY_OF_ADDUCT.get(adduct, 0)
         else:
             polarity = ion_mode_to_idx(ion)
 
-        # 数据增强 (仅训练集)
         if self.augment and len(mz_arr) > 0:
-            # 策略 A: 随机移除低丰度峰
             low_idx = np.where(int_arr < config.MS_AUG_REMOVE_THRESHOLD)[0]
             if len(low_idx) > 0:
                 n_remove = int(len(low_idx) * config.MS_AUG_REMOVE_RATIO)
@@ -79,7 +74,6 @@ class AdductDataset(Dataset):
                     mz_arr, int_arr = mz_arr[keep], int_arr[keep]
 
             if len(mz_arr) > 0:
-                # 策略 B: 相对强度抖动
                 jitter = np.random.uniform(
                     -config.MS_AUG_JITTER_RANGE,
                     config.MS_AUG_JITTER_RANGE,
@@ -87,7 +81,6 @@ class AdductDataset(Dataset):
                 )
                 int_arr = np.clip(int_arr * (1.0 + jitter), 0.0, None)
 
-                # 策略 C: 注入化学噪音峰
                 n_noise = np.random.randint(
                     0, config.MS_AUG_MAX_NOISE_PEAKS + 1
                 )
@@ -101,12 +94,10 @@ class AdductDataset(Dataset):
                     mz_arr = np.concatenate((mz_arr, noise_mz))
                     int_arr = np.concatenate((int_arr, noise_int))
 
-        # 安全回退
         if len(mz_arr) == 0:
             mz_arr = np.array([100.0], dtype=np.float32)
             int_arr = np.array([1e-5], dtype=np.float32)
 
-        # Top-K 峰 + 归一化 + Padding
         sort_idx = np.argsort(int_arr)[::-1][:config.MAX_PEAKS]
         mz_arr, int_arr = mz_arr[sort_idx], int_arr[sort_idx]
 

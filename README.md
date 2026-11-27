@@ -18,7 +18,7 @@ collision-energy representations.
 
 The Python code, the three trained checkpoints and the Spectraverse splits are
 all in the Zenodo record **[10.5281/zenodo.24587551](https://doi.org/10.5281/zenodo.24587551)**
-(record id `24587551`, version 1.0.0, MIT licence):
+(record id `24587551`, version 1.0.0, MIT license):
 
 | Artefact | Zenodo file | Installed as | Size |
 |---|---|---:|---:|

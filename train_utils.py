@@ -115,8 +115,8 @@ def validate_live(model, loader, criterion, device):
         acc = accuracy_score(all_labels, all_preds)
         pbar.set_postfix(L=f"{losses.avg:.3f}", A=f"{acc:.3f}")
     acc = accuracy_score(all_labels, all_preds)
-    # labels 显式给全 9 类: 若某类在本 split 中零样本 (如 enveda 的 [M]+), sklearn 默认
-    # 会把它整个剔出 macro 平均, 同一个模型的 F1 会凭空变高且与其他数据集不可比。
+    # labels 显式给全 9 类: 若某类在本 split 中零样本, sklearn 默认会把它整个
+    # 剔出 macro 平均, 同一个模型的 F1 会凭空变高且与其他数据集不可比。
     f1 = f1_score(all_labels, all_preds, average='macro',
                   labels=list(range(config.NUM_ADDUCT_CLASSES)), zero_division=0)
     return losses.avg, acc, f1, all_preds, all_labels

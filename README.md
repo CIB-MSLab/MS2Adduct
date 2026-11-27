@@ -78,11 +78,6 @@ The splits are grouped by molecular structure with seed 42 (8:1:1); training
 seeds are a separate random source. They can also be rebuilt from the public
 source spectra; see [data/README.md](data/README.md).
 
-The Enveda-180 splits used for the cross-dataset analyses are not part of the
-deposit; rebuild them with `data/build_enveda_dataset.py`. `data/cib-ms/` holds
-our in-house QExactive external validation set (3,437 spectra, 3 adduct classes)
-and its build script.
-
 Each record is a dict with at least:
 
 | Key | Meaning |

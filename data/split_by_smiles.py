@@ -6,7 +6,6 @@
 各数据集独立划分（各自用自己的 SMILES 列表洗牌），互不影响:
   training_dataset.pkl    → splits/             spectraverse-1.0.1
   MassSpecGym_adduct.pkl  → splits_MassSpecGym/
-  enveda-180-filtered.pkl → splits_enveda/      enveda-180 (由 build_enveda_dataset.py 生成)
 """
 import json
 import pickle
@@ -22,7 +21,6 @@ SEED = 42
 DATASETS = [
     {"input": "training_dataset.pkl", "output_dir": "splits"},
     {"input": "MassSpecGym_adduct.pkl", "output_dir": "splits_MassSpecGym"},
-    {"input": "enveda-180-filtered.pkl", "output_dir": "splits_enveda"},
 ]
 
 

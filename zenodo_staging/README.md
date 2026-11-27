@@ -30,10 +30,9 @@ The names on the left are the names to use in the Zenodo record; the arrows show
 where `scripts/download_data.sh` installs them. Checksums are in
 `SHA256SUMS_data`.
 
-The Enveda-180 splits (`enveda_*.pkl`) and the raw in-house `.ms` archive
-(`cib_ms_raw_msdir.tar.gz`) are **not** part of the deposit; they are only used
-for the secondary / cross-dataset analyses and can be rebuilt locally with
-`data/build_enveda_dataset.py` and `data/cib-ms/build_cib_dataset.py`.
+Local leftovers from earlier drafts (`data/enveda_*.pkl`,
+`data/cib_ms_raw_msdir.tar.gz`) are not part of the deposit and are not used by
+the released code.
 
 ## Code (`code/`)
 

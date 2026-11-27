@@ -10,10 +10,8 @@ dreaMS 谱图编码器与 ssl_model.ckpt 预训练配置一致。
   --max_peaks N     None=沿用 config.MAX_PEAKS; 60=预训练值
   --dropout P       None=沿用 backbone 默认 0.0; 0.1=预训练值
 
-数据集由 --data 切换 (默认 spectraverse, 与改动前完全一致):
-  --data spectraverse  data/splits/         9 类齐全, 原有主数据集
-  --data enveda        data/splits_enveda/  enveda-180 内部划分, 缺 [M]+ 类
-  --data enveda_test   spectraverse 训练 + enveda 测试 (跨数据集, 缺 [M]+ 类)
+数据集由 --data 切换 (默认 spectraverse):
+  --data spectraverse  data/splits/         9 类齐全, 主数据集
 自检 / 回归: verify_dreaMS_fidelity.py
 """
 import os, shutil, argparse, random, numpy as np, torch, torch.nn as nn
@@ -93,10 +91,7 @@ def main():
                         help='checkpoint 选择/早停判据: loss_acc=冠军原判据, f1=按 val Macro F1')
     parser.add_argument('--data', type=str, default='spectraverse',
                         choices=list(config.DATA_SETS.keys()),
-                        help='数据集组合 (见 config.DATA_SETS): '
-                             'spectraverse=原有主数据集; '
-                             'enveda=enveda-180 内部划分 (缺 [M]+ 类); '
-                             'enveda_test=spectraverse 训练 + enveda 测试 (跨数据集评测)')
+                        help='数据集组合 (见 config.DATA_SETS): spectraverse=主数据集')
     # ── dreaMS 原型一致性开关 (默认 None = 沿用 config.DREAMS2_*, 即"完全一致") ──
     parser.add_argument('--heads', type=int, default=None, choices=[8, 16],
                         help='注意力头数; 8 = ssl_model.ckpt 预训练配置 (默认), 16 = 旧移植版行为')

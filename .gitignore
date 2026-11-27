@@ -3,8 +3,6 @@
 
 # Large data (download from Zenodo)
 /data/splits
-/data/splits_enveda
-/data/cib-ms/MSDIR/
 /data/dreams_cache/
 /data/*.mgf
 /data/*.pkl

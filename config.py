@@ -8,20 +8,11 @@ DATA_FRACTION = 1.0            # 快速验证: 1.0=全量 0.2=20% (供融合选�
 
 # === 数据集选择 (train_dreaMS_harmonictsfm_2.py --data) ===
 # 每项为 (train, val, test) 三元组; --data 选定后写入上面的 TRAIN_PKL/VAL_PKL/TEST_PKL。
-#   spectraverse : 9 类齐全, 项目原有主数据集
-#   enveda       : enveda-180-filtered 内部划分; 缺 [M]+ 类 (该类在 enveda 中零样本)
-#   enveda_test  : spectraverse 训练 + enveda 测试, 跨数据集评测
-#                  (两数据集分子几乎不相交: RDKit 规范化后仅 26 个共享结构, 泄漏可忽略)
+#   spectraverse : 9 类齐全, 主数据集
 DATA_SETS = {
     "spectraverse": ("data/splits/train.pkl",
                      "data/splits/val.pkl",
                      "data/splits/test.pkl"),
-    "enveda":       ("data/splits_enveda/train.pkl",
-                     "data/splits_enveda/val.pkl",
-                     "data/splits_enveda/test.pkl"),
-    "enveda_test":  ("data/splits/train.pkl",
-                     "data/splits/val.pkl",
-                     "data/splits_enveda/test.pkl"),
 }
 
 # === MS 编码器超参数 (CSU-MS2) ===
@@ -38,7 +29,7 @@ DROPOUT_RATE = 0.4
 HIERARCHICAL_HEADS = True          # 分层分类：先判正/负离子模式，再判具体加合物
 ION_LOSS_WEIGHT = 0.3              # 离子模式辅助 loss 权重
 # 离子模式辅助头: 训练一个 Linear(256→2) 去**预测**正/负离子模式。
-# 既然模式在采集时已由操作者选定、谱图元数据 (cib-ms 的 ion_mode 字段) 直接给出,
+# 既然模式在采集时已由操作者选定、谱图元数据 (ion_mode 字段) 直接给出,
 # 就没有任何理由让模型再猜一遍。False = 完全不构造 ion_mode_head, 也就不加该项辅助 loss
 # (训练循环的 _hierarchical() 会自动跳过)。
 # 注意: 只去掉"预测极性"的辅助头; positive_head / negative_head 这两个**同极性内**
@@ -267,7 +258,6 @@ PAIRDIFF_SHAM_SEED = 123
 #   "fourier" : dreaMS 风格固定傅里叶频率 (FourierFeatures), 不用手工表
 # 2026-10-19 定案: 默认改为 "fourier" —— 域内 spectraverse 上 3 seeds 均优于 bases
 # (盲协议 ΔF1 +0.0143; 叠加推理期极性屏蔽后 Acc 0.8817 / F1 0.7869, 项目最优)。
-# cib-ms 外部集有负迁移, 但按用户决定不作为本次默认选择的约束。
 # 旧 ckpt (bases 架构) 的加载由 load_ckpt/eval_external 的 state_dict 键自动判据保证。
 DELTA_ENCODER = "fourier"
 # δ 分支的 token 定义 (2026-10-20):
@@ -313,8 +303,8 @@ IDX_TO_ADDUCT = {v: k for k, v in ADDUCT_TO_IDX.items()}
 # ════════════════════════════════════════════════════════════════════
 # 离子模式 (正/负) 作为**已知输入**
 #
-# 动机: 正/负离子模式是采集时由操作者选定的, 谱图/元数据里直接给出 (cib-ms 数据集的
-#   ion_mode 字段就是 ESI+), 不需要模型去猜。而当前分层头 (HIERARCHICAL_HEADS) 把
+# 动机: 正/负离子模式是采集时由操作者选定的, 谱图/元数据里直接给出 (ion_mode 字段
+#   即 ESI+/ESI-), 不需要模型去猜。而当前分层头 (HIERARCHICAL_HEADS) 把
 #   "先判正/负"当成一个预测任务: 九类 logits 里正负两侧自由竞争。
 #
 # 实证 (analyze_polarity.py, 控制臂 ckpt/MS2ADDUCT_DreaMSHT2_s*):

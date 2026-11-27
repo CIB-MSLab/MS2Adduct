@@ -56,9 +56,8 @@ class AdductDataset(Dataset):
         ce = float(ce)
 
         # 离子模式 (正/负): 采集时已知的输入, 不是预测目标。
-        # 优先取谱图元数据里的字段 (cib-ms 有 ion_mode=ESI+); 无该字段的数据集
-        # (spectraverse/enveda) 退化为按 adduct 直接读出极性 —— 对真实数据而言
-        # 这两者本就同源: 选正模式才会看到 [M+H]+。
+        # 优先取谱图元数据里的字段 (ion_mode / polarity); 没有该字段时退化为按 adduct
+        # 直接读出极性 —— 对真实数据而言这两者本就同源: 选正模式才会看到 [M+H]+。
         ion = item.get('ion_mode', item.get('polarity'))
         if ion is None or (isinstance(ion, str) and not ion.strip()):
             polarity = config.POLARITY_OF_ADDUCT.get(adduct, 0)
